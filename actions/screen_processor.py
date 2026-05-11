@@ -33,8 +33,7 @@ try:
 except ImportError:
     _PIL = False
 
-from google import genai
-from google.genai import types as gtypes
+from core.provider import get_live_client, get_live_types
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -311,10 +310,8 @@ class _VisionSession:
         self._out_queue = asyncio.Queue(maxsize=30)
         self._audio_in  = asyncio.Queue()
 
-        client = genai.Client(
-            api_key=_get_api_key(),
-            http_options={"api_version": "v1beta"},
-        )
+        client = get_live_client()
+        gtypes = get_live_types()
         config = gtypes.LiveConnectConfig(
             response_modalities=["AUDIO"],
             output_audio_transcription={},
