@@ -15,6 +15,10 @@ from ui import JarvisUI
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
 )
+from memory.session_memory import (
+    start_session, record_tool_call, record_conversation,
+    get_session_context,
+)
 
 from actions.file_processor import file_processor
 from actions.flight_finder     import flight_finder
@@ -645,7 +649,11 @@ class JarvisLive:
             f"Use this to calculate exact times for reminders.\n\n"
         )
 
+        session_ctx = get_session_context()
+
         parts = [time_ctx]
+        if session_ctx:
+            parts.append(session_ctx)
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
@@ -800,6 +808,8 @@ class JarvisLive:
         self._active_tool = "none"
         self._publish_runtime_status("online", "idle", force=True, detail=f"Last tool: {name}")
 
+        record_tool_call(name, str(args)[:120], str(result)[:200])
+
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
         return types.FunctionResponse(
             id=fc.id, name=name,
@@ -915,6 +925,9 @@ class JarvisLive:
                                 self.ui.write_log(f"Jarvis: {full_out}")
                             out_buf = []
 
+                            if full_in or full_out:
+                                record_conversation(full_in, full_out)
+
                     if response.tool_call:
                         self._last_realtime_recv_at = time.monotonic()
                         self._publish_runtime_status("online", "tool", force=True, detail="Gemini requested tool execution")
@@ -1001,6 +1014,7 @@ class JarvisLive:
                     self._turn_done_event = asyncio.Event()
 
                     print("[JARVIS] ✅ Connected.")
+                    start_session()
                     if self._reconnect_attempt > 0:
                         self.ui.write_log(f"SYS: Live session recovered after {self._reconnect_attempt} retry attempt(s).")
                     self._reconnect_attempt = 0
