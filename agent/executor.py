@@ -250,6 +250,13 @@ class AgentExecutor:
 
     MAX_REPLAN_ATTEMPTS = 2
 
+    def _progress(self, speak, step_num, total, desc):
+        total_steps = len(self._current_steps or [])
+        msg = f"Step {step_num} of {total_steps}: {desc[:100]}."
+        if speak:
+            speak(msg)
+        print(f"[Executor] 🗣️  Progress: {msg}")
+
     def execute(
         self,
         goal:        str,
@@ -257,6 +264,8 @@ class AgentExecutor:
         cancel_flag: threading.Event | None = None,
     ) -> str:
         print(f"\n[Executor] 🎯 Goal: {goal}")
+        if speak:
+            speak(f"I'm on it, sir.")
 
         replan_attempts = 0
         completed_steps = []
@@ -265,12 +274,14 @@ class AgentExecutor:
 
         while True:
             steps = plan.get("steps", [])
+            self._current_steps = steps
 
             if not steps:
                 msg = "I couldn't create a valid plan for this task, sir."
                 if speak: speak(msg)
                 return msg
 
+            total = len(steps)
             success      = True
             failed_step  = None
             failed_error = ""
@@ -287,7 +298,8 @@ class AgentExecutor:
 
                 params = _inject_context(params, tool, step_results, goal=goal)
 
-                print(f"\n[Executor] ▶️ Step {step_num}: [{tool}] {desc}")
+                self._progress(speak, step_num, total, desc)
+                print(f"\n[Executor] ▶️ Step {step_num}/{total}: [{tool}] {desc}")
 
                 attempt = 1
                 step_ok = False
@@ -375,7 +387,15 @@ class AgentExecutor:
             plan = replan(goal, completed_steps, failed_step, failed_error)
 
     def _summarize(self, goal: str, completed_steps: list, speak: Callable | None) -> str:
-        fallback = f"All done, sir. Completed {len(completed_steps)} steps for: {goal[:60]}."
+        step_descs = [s.get("description", "a step") for s in completed_steps]
+        if len(step_descs) == 1:
+            fallback = f"Done, sir. {step_descs[0]} — completed."
+        elif len(step_descs) == 2:
+            fallback = f"All done, sir. {step_descs[0]}, then {step_descs[1]}."
+        else:
+            last = step_descs[-1]
+            fallback = f"All done, sir. Completed {len(completed_steps)} steps — most recently, {last}."
+
         try:
             import google.generativeai as genai
             genai.configure(api_key=_get_api_key())
@@ -384,8 +404,8 @@ class AgentExecutor:
             prompt    = (
                 f'User goal: "{goal}"\n'
                 f"Completed steps:\n{steps_str}\n\n"
-                "Write a single natural sentence summarizing what was accomplished. "
-                "Address the user as 'sir'. Be direct and positive."
+                "Write ONE short sentence summarizing what was accomplished. "
+                "Address user as 'sir'. Maximum 15 words. Be natural, not robotic."
             )
             response = model.generate_content(prompt)
             summary  = response.text.strip()
