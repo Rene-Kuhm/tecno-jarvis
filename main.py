@@ -531,6 +531,7 @@ class JarvisLive:
         self._last_realtime_recv_at: float | None = None
         self._active_tool = "none"
         self._reconnect_attempt = 0
+        self._last_failure_source = "connect"
 
     def _publish_mic_diag(self, status: str, level: float = 0.0, *, force: bool = False, detail: str = ""):
         now = time.monotonic()
@@ -576,6 +577,10 @@ class JarvisLive:
         self._active_tool = "none"
         self._last_realtime_sent_at = None
         self._last_realtime_recv_at = None
+
+    def _raise_component_error(self, source: str, error: Exception):
+        self._last_failure_source = source
+        raise RuntimeError(f"{source}: {error}") from error
 
     @staticmethod
     def _describe_session_error(error: Exception) -> tuple[str, bool]:
@@ -803,10 +808,13 @@ class JarvisLive:
 
     async def _send_realtime(self):
         while True:
-            msg = await self.out_queue.get()
-            self._last_realtime_sent_at = time.monotonic()
-            self._publish_runtime_status("online", "sending", detail="Sending audio/text to Gemini Live")
-            await self.session.send_realtime_input(media=msg)
+            try:
+                msg = await self.out_queue.get()
+                self._last_realtime_sent_at = time.monotonic()
+                self._publish_runtime_status("online", "sending", detail="Sending audio/text to Gemini Live")
+                await self.session.send_realtime_input(media=msg)
+            except Exception as e:
+                self._raise_component_error("send", e)
 
     async def _listen_audio(self):
         print("[JARVIS] 🎤 Mic started")
@@ -863,7 +871,7 @@ class JarvisLive:
         except Exception as e:
             print(f"[JARVIS] ❌ Mic: {e}")
             self._publish_mic_diag("error", force=True, detail=str(e))
-            raise
+            self._raise_component_error("mic", e)
 
     async def _receive_audio(self):
         print("[JARVIS] 👂 Recv started")
@@ -921,7 +929,7 @@ class JarvisLive:
         except Exception as e:
             print(f"[JARVIS] ❌ Recv: {e}")
             traceback.print_exc()
-            raise
+            self._raise_component_error("recv", e)
 
     async def _play_audio(self):
         print("[JARVIS] 🔊 Play started")
@@ -958,7 +966,7 @@ class JarvisLive:
                 await asyncio.to_thread(stream.write, chunk)
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")
-            raise
+            self._raise_component_error("play", e)
         finally:
             self.set_speaking(False)
             stream.stop()
@@ -985,6 +993,7 @@ class JarvisLive:
                     client.aio.live.connect(model=LIVE_MODEL, config=config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
+                    self._last_failure_source = "connect"
                     self.session        = session
                     self._loop          = asyncio.get_event_loop()
                     self.audio_in_queue = asyncio.Queue()
@@ -992,6 +1001,8 @@ class JarvisLive:
                     self._turn_done_event = asyncio.Event()
 
                     print("[JARVIS] ✅ Connected.")
+                    if self._reconnect_attempt > 0:
+                        self.ui.write_log(f"SYS: Live session recovered after {self._reconnect_attempt} retry attempt(s).")
                     self._reconnect_attempt = 0
                     reconnect_delay = 3.0
                     self.ui.set_state("LISTENING")
@@ -1007,12 +1018,13 @@ class JarvisLive:
             except Exception as e:
                 self._reconnect_attempt += 1
                 detail, fatal = self._describe_session_error(e)
-                print(f"[JARVIS] ⚠️ {detail}")
+                source = self._last_failure_source or "connect"
+                print(f"[JARVIS] ⚠️ {source}: {detail}")
                 traceback.print_exc()
-                self.ui.write_log(f"ERR: Live session failed ({detail})")
-                self._publish_mic_diag("offline", force=True, detail=detail)
+                self.ui.write_log(f"ERR: Live session failed in {source} ({detail})")
+                self._publish_mic_diag("offline", force=True, detail=f"{source}: {detail}")
                 if fatal:
-                    self._publish_runtime_status("error", "idle", force=True, detail="Fatal live-session error. Fix credentials/config before retrying.")
+                    self._publish_runtime_status("error", "idle", force=True, detail=f"Fatal {source} error. Fix credentials/config before retrying.")
                     self.set_speaking(False)
                     self.ui.set_state("THINKING")
                     self._reset_live_state()
@@ -1024,9 +1036,9 @@ class JarvisLive:
                     "retrying",
                     "idle",
                     force=True,
-                    detail=f"Reconnect attempt {self._reconnect_attempt}. Retrying in {wait_seconds:.0f}s...",
+                    detail=f"{source} failed. Reconnect attempt {self._reconnect_attempt} in {wait_seconds:.0f}s...",
                 )
-                self.ui.write_log(f"SYS: Reconnect attempt {self._reconnect_attempt} in {wait_seconds:.0f}s")
+                self.ui.write_log(f"SYS: {source} reconnect attempt {self._reconnect_attempt} in {wait_seconds:.0f}s")
                 reconnect_delay = min(reconnect_delay * 1.6, max_reconnect_delay)
             self.set_speaking(False)
             self.ui.set_state("THINKING")
