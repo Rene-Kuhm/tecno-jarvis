@@ -1333,7 +1333,6 @@ class MainWindow(QMainWindow):
         sep4 = QFrame(); sep4.setFrameShape(QFrame.Shape.HLine)
         sep4.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep4)
-
         lay.addWidget(_sec("COMMAND INPUT"))
         lay.addLayout(self._build_input_row())
 
@@ -1500,7 +1499,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._runtime_detail_lbl)
 
         return panel
-
     def _populate_audio_device_selectors(self):
         cfg = _load_app_config()
         selected_input = cfg.get("input_device")
@@ -1556,7 +1554,6 @@ class MainWindow(QMainWindow):
             return
         _save_app_config(output_device=int(device))
         self._log.append_log("SYS: Output device saved. Reconnect Jarvis to apply.")
-
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
         self._input = QLineEdit()
@@ -1747,7 +1744,6 @@ class MainWindow(QMainWindow):
         self._runtime_tool_lbl.setText(f"TOOL  {active_tool}")
         self._runtime_queue_lbl.setText(f"QUEUE out={out_queue} in={in_queue}")
         self._runtime_detail_lbl.setText(detail or "Live session active.")
-
     def _check_config(self) -> bool:
         d = _load_app_config()
         return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
@@ -1847,7 +1843,6 @@ class JarvisUI:
                 "detail": detail,
             }
         )
-
     def wait_for_api_key(self):
         while not self._win._ready:
             time.sleep(0.1)
