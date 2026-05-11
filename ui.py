@@ -48,7 +48,11 @@ def _load_app_config() -> dict:
 
 def _save_app_config(**updates) -> None:
     cfg = _load_app_config()
-    cfg.update(updates)
+    for key, value in updates.items():
+        if value is None:
+            cfg.pop(key, None)
+        else:
+            cfg[key] = value
     os.makedirs(CONFIG_DIR, exist_ok=True)
     API_FILE.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
 
@@ -1447,6 +1451,27 @@ class MainWindow(QMainWindow):
         lay.addWidget(speaker_lbl)
         lay.addWidget(self._speaker_select)
 
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(4)
+        refresh_btn = QPushButton("REFRESH")
+        default_btn = QPushButton("USE DEFAULT")
+        for btn in [refresh_btn, default_btn]:
+            btn.setFixedHeight(22)
+            btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent; color: {C.TEXT_MED};
+                    border: 1px solid {C.BORDER}; border-radius: 3px; padding: 0 6px;
+                }}
+                QPushButton:hover {{ color: {C.PRI}; border: 1px solid {C.BORDER_B}; }}
+            """)
+        refresh_btn.clicked.connect(self._refresh_audio_devices)
+        default_btn.clicked.connect(self._use_default_audio_devices)
+        btn_row.addWidget(refresh_btn)
+        btn_row.addWidget(default_btn)
+        lay.addLayout(btn_row)
+
         self._mic_select.currentIndexChanged.connect(self._save_selected_input_device)
         self._speaker_select.currentIndexChanged.connect(self._save_selected_output_device)
         self._populate_audio_device_selectors()
@@ -1509,6 +1534,8 @@ class MainWindow(QMainWindow):
 
         self._mic_select.clear()
         self._speaker_select.clear()
+        self._mic_select.addItem("system default", None)
+        self._speaker_select.addItem("system default", None)
 
         mic_options = _audio_device_options("input")
         speaker_options = _audio_device_options("output")
@@ -1524,36 +1551,59 @@ class MainWindow(QMainWindow):
         self._mic_select.blockSignals(False)
         self._speaker_select.blockSignals(False)
 
+        if selected_input is not None and self._mic_select.currentIndex() == 0:
+            self._log.append_log("SYS: Saved microphone device is unavailable. Falling back to system default.")
+        if selected_output is not None and self._speaker_select.currentIndex() == 0:
+            self._log.append_log("SYS: Saved speaker device is unavailable. Falling back to system default.")
+
     @staticmethod
     def _set_combo_to_device(combo: QComboBox, device_value):
-        if combo.count() == 0 or device_value is None:
+        if combo.count() == 0:
+            return
+        if device_value is None:
+            combo.setCurrentIndex(0)
             return
         try:
             target = int(device_value)
         except (TypeError, ValueError):
+            combo.setCurrentIndex(0)
             return
         for i in range(combo.count()):
             if combo.itemData(i) == target:
                 combo.setCurrentIndex(i)
                 return
+        combo.setCurrentIndex(0)
 
     def _save_selected_input_device(self, index: int):
         if index < 0:
             return
         device = self._mic_select.itemData(index)
         if device is None:
+            _save_app_config(input_device=None)
+            self._log.append_log("SYS: Input device reset to system default.")
             return
         _save_app_config(input_device=int(device))
-        self._log.append_log("SYS: Input device saved. Reconnect Jarvis to apply.")
+        self._log.append_log("SYS: Input device saved. Next reconnect will use it.")
 
     def _save_selected_output_device(self, index: int):
         if index < 0:
             return
         device = self._speaker_select.itemData(index)
         if device is None:
+            _save_app_config(output_device=None)
+            self._log.append_log("SYS: Output device reset to system default.")
             return
         _save_app_config(output_device=int(device))
-        self._log.append_log("SYS: Output device saved. Reconnect Jarvis to apply.")
+        self._log.append_log("SYS: Output device saved. Next reconnect will use it.")
+
+    def _refresh_audio_devices(self):
+        self._populate_audio_device_selectors()
+        self._log.append_log("SYS: Audio device list refreshed.")
+
+    def _use_default_audio_devices(self):
+        self._mic_select.setCurrentIndex(0)
+        self._speaker_select.setCurrentIndex(0)
+        self._log.append_log("SYS: Audio devices reset to system defaults.")
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
         self._input = QLineEdit()
