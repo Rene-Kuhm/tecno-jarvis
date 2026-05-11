@@ -987,6 +987,7 @@ class SetupOverlay(QWidget):
 class MainWindow(QMainWindow):
     _log_sig   = pyqtSignal(str)
     _state_sig = pyqtSignal(str)
+    _audio_diag_sig = pyqtSignal(object)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1043,6 +1044,7 @@ class MainWindow(QMainWindow):
 
         self._log_sig.connect(self._log.append_log)
         self._state_sig.connect(self._apply_state)
+        self._audio_diag_sig.connect(self._apply_audio_diag)
 
         self._overlay: SetupOverlay | None = None
         self._ready = self._check_config()
@@ -1276,6 +1278,13 @@ class MainWindow(QMainWindow):
         sep2.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep2)
 
+        lay.addWidget(_sec("AUDIO DIAGNOSTICS"))
+        lay.addWidget(self._build_audio_diag_panel())
+
+        sep3 = QFrame(); sep3.setFrameShape(QFrame.Shape.HLine)
+        sep3.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
+        lay.addWidget(sep3)
+
         lay.addWidget(_sec("COMMAND INPUT"))
         lay.addLayout(self._build_input_row())
 
@@ -1304,6 +1313,56 @@ class MainWindow(QMainWindow):
         lay.addWidget(fs_btn)
 
         return w
+
+    def _build_audio_diag_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setStyleSheet(
+            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+        )
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(6, 5, 6, 5)
+        lay.setSpacing(4)
+
+        self._mic_status_lbl = QLabel("MIC  OFFLINE")
+        self._mic_status_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._mic_status_lbl.setStyleSheet(f"color: {C.RED}; background: transparent; border: none;")
+        lay.addWidget(self._mic_status_lbl)
+
+        self._mic_level_lbl = QLabel("LVL  0%")
+        self._mic_level_lbl.setFont(QFont("Courier New", 8))
+        self._mic_level_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
+        lay.addWidget(self._mic_level_lbl)
+
+        self._mic_level_bar = QProgressBar()
+        self._mic_level_bar.setRange(0, 100)
+        self._mic_level_bar.setValue(0)
+        self._mic_level_bar.setTextVisible(False)
+        self._mic_level_bar.setFixedHeight(10)
+        self._mic_level_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {C.BAR_BG};
+                border: 1px solid {C.BORDER};
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background: {C.GREEN};
+                border-radius: 2px;
+            }}
+        """)
+        lay.addWidget(self._mic_level_bar)
+
+        self._mic_last_input_lbl = QLabel("LAST  no signal yet")
+        self._mic_last_input_lbl.setFont(QFont("Courier New", 7))
+        self._mic_last_input_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(self._mic_last_input_lbl)
+
+        self._mic_detail_lbl = QLabel("Waiting for microphone stream...")
+        self._mic_detail_lbl.setFont(QFont("Courier New", 7))
+        self._mic_detail_lbl.setWordWrap(True)
+        self._mic_detail_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
+        lay.addWidget(self._mic_detail_lbl)
+
+        return panel
 
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
@@ -1413,6 +1472,54 @@ class MainWindow(QMainWindow):
         self.hud.state    = state
         self.hud.speaking = (state == "SPEAKING")
 
+    def _apply_audio_diag(self, payload: dict):
+        status = str(payload.get("status", "offline")).lower()
+        level = max(0.0, min(1.0, float(payload.get("level", 0.0))))
+        age = payload.get("age")
+        detail = str(payload.get("detail", "")).strip()
+
+        status_map = {
+            "offline": ("MIC  OFFLINE", C.RED),
+            "ready": ("MIC  READY", C.ACC2),
+            "silent": ("MIC  SILENT", C.TEXT_MED),
+            "hearing": ("MIC  HEARING", C.GREEN),
+            "muted": ("MIC  MUTED", C.MUTED_C),
+            "paused": ("MIC  PAUSED", C.ACC),
+            "error": ("MIC  ERROR", C.RED),
+        }
+        text, color = status_map.get(status, (f"MIC  {status.upper()}", C.TEXT_MED))
+        self._mic_status_lbl.setText(text)
+        self._mic_status_lbl.setStyleSheet(
+            f"color: {color}; background: transparent; border: none;"
+        )
+
+        percent = int(round(level * 100))
+        self._mic_level_lbl.setText(f"LVL  {percent}%")
+        self._mic_level_bar.setValue(percent)
+
+        if isinstance(age, (int, float)):
+            if age < 1:
+                last_input = "LAST  just now"
+            else:
+                last_input = f"LAST  {age:.1f}s ago"
+        else:
+            last_input = "LAST  no signal yet"
+        self._mic_last_input_lbl.setText(last_input)
+
+        if detail:
+            self._mic_detail_lbl.setText(detail)
+        else:
+            detail_map = {
+                "offline": "Voice session not ready yet.",
+                "ready": "Microphone stream open. Waiting for voice.",
+                "silent": "Mic is open, but no strong input is reaching Jarvis.",
+                "hearing": "Jarvis is receiving microphone signal right now.",
+                "muted": "Microphone capture is muted in the Jarvis UI.",
+                "paused": "Input capture is paused while Jarvis is speaking.",
+                "error": "Microphone stream failed. Check the console for details.",
+            }
+            self._mic_detail_lbl.setText(detail_map.get(status, ""))
+
     def _check_config(self) -> bool:
         if not API_FILE.exists(): return False
         try:
@@ -1490,6 +1597,11 @@ class JarvisUI:
 
     def write_log(self, text: str):
         self._win._log_sig.emit(text)
+
+    def update_audio_diag(self, *, status: str, level: float = 0.0, age: float | None = None, detail: str = ""):
+        self._win._audio_diag_sig.emit(
+            {"status": status, "level": level, "age": age, "detail": detail}
+        )
 
     def wait_for_api_key(self):
         while not self._win._ready:

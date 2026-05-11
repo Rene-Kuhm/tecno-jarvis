@@ -1,4 +1,5 @@
 import asyncio
+import time
 import re
 import threading
 import json
@@ -6,6 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
+import numpy as np
 import sounddevice as sd
 from google import genai
 from google.genai import types
@@ -492,6 +494,22 @@ class JarvisLive:
         self._speaking_lock = threading.Lock()
         self.ui.on_text_command = self._on_text_command
         self._turn_done_event: asyncio.Event | None = None
+        self._mic_last_publish = 0.0
+        self._mic_last_signal_at: float | None = None
+        self._mic_status = "offline"
+
+    def _publish_mic_diag(self, status: str, level: float = 0.0, *, force: bool = False, detail: str = ""):
+        now = time.monotonic()
+        if not force and status == self._mic_status and (now - self._mic_last_publish) < 0.2:
+            return
+
+        age = None
+        if self._mic_last_signal_at is not None:
+            age = max(0.0, now - self._mic_last_signal_at)
+
+        self._mic_status = status
+        self._mic_last_publish = now
+        self.ui.update_audio_diag(status=status, level=level, age=age, detail=detail)
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -707,10 +725,32 @@ class JarvisLive:
     async def _listen_audio(self):
         print("[JARVIS] 🎤 Mic started")
         loop = asyncio.get_event_loop()
+        signal_threshold = 0.015
 
         def callback(indata, frames, time_info, status):
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
+
+            peak_level = (
+                float(np.max(np.abs(indata.astype(np.float32)))) / 32768.0
+                if len(indata)
+                else 0.0
+            )
+            now = time.monotonic()
+            if peak_level >= signal_threshold:
+                self._mic_last_signal_at = now
+
+            if self.ui.muted:
+                diag_status = "muted"
+            elif jarvis_speaking:
+                diag_status = "paused"
+            elif peak_level >= signal_threshold:
+                diag_status = "hearing"
+            else:
+                diag_status = "silent"
+
+            loop.call_soon_threadsafe(self._publish_mic_diag, diag_status, peak_level)
+
             if not jarvis_speaking and not self.ui.muted:
                 data = indata.tobytes()
                 loop.call_soon_threadsafe(
@@ -727,10 +767,13 @@ class JarvisLive:
                 callback=callback,
             ):
                 print("[JARVIS] 🎤 Mic stream open")
+                self._publish_mic_diag("ready", force=True)
+                self.ui.write_log("SYS: Microphone stream open.")
                 while True:
                     await asyncio.sleep(0.1)
         except Exception as e:
             print(f"[JARVIS] ❌ Mic: {e}")
+            self._publish_mic_diag("error", force=True, detail=str(e))
             raise
 
     async def _receive_audio(self):
@@ -849,6 +892,7 @@ class JarvisLive:
                     print("[JARVIS] ✅ Connected.")
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: JARVIS online.")
+                    self._publish_mic_diag("offline", force=True, detail="Voice session connected. Opening microphone stream...")
 
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
@@ -858,6 +902,7 @@ class JarvisLive:
             except Exception as e:
                 print(f"[JARVIS] ⚠️ {e}")
                 traceback.print_exc()
+                self._publish_mic_diag("offline", force=True, detail="Voice session disconnected. Retrying...")
             self.set_speaking(False)
             self.ui.set_state("THINKING")
             print("[JARVIS] 🔄 Reconnecting in 3s...")
