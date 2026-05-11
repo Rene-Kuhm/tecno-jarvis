@@ -530,6 +530,7 @@ class JarvisLive:
         self._last_realtime_sent_at: float | None = None
         self._last_realtime_recv_at: float | None = None
         self._active_tool = "none"
+        self._reconnect_attempt = 0
 
     def _publish_mic_diag(self, status: str, level: float = 0.0, *, force: bool = False, detail: str = ""):
         now = time.monotonic()
@@ -565,6 +566,29 @@ class JarvisLive:
             in_queue=in_queue,
             detail=detail,
         )
+
+    def _reset_live_state(self):
+        self.session = None
+        self._loop = None
+        self.audio_in_queue = None
+        self.out_queue = None
+        self._turn_done_event = None
+        self._active_tool = "none"
+        self._last_realtime_sent_at = None
+        self._last_realtime_recv_at = None
+
+    @staticmethod
+    def _describe_session_error(error: Exception) -> tuple[str, bool]:
+        text = str(error).strip() or error.__class__.__name__
+        lower = text.lower()
+
+        if any(token in lower for token in ["api key", "unauthorized", "permission denied", "authentication", "403", "401"]):
+            return (f"Authentication failed: {text}", True)
+        if any(token in lower for token in ["quota", "rate limit", "429", "resource exhausted"]):
+            return (f"Rate or quota limit hit: {text}", False)
+        if any(token in lower for token in ["timeout", "timed out", "connection", "network", "temporarily unavailable", "unavailable", "dns"]):
+            return (f"Transient network error: {text}", False)
+        return (text, False)
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -946,7 +970,11 @@ class JarvisLive:
             http_options={"api_version": "v1beta"}
         )
 
+        reconnect_delay = 3.0
+        max_reconnect_delay = 30.0
+
         while True:
+            wait_seconds = reconnect_delay
             try:
                 print("[JARVIS] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
@@ -964,6 +992,8 @@ class JarvisLive:
                     self._turn_done_event = asyncio.Event()
 
                     print("[JARVIS] ✅ Connected.")
+                    self._reconnect_attempt = 0
+                    reconnect_delay = 3.0
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: JARVIS online.")
                     self._publish_mic_diag("offline", force=True, detail="Voice session connected. Opening microphone stream...")
@@ -975,14 +1005,34 @@ class JarvisLive:
                     tg.create_task(self._play_audio())
 
             except Exception as e:
-                print(f"[JARVIS] ⚠️ {e}")
+                self._reconnect_attempt += 1
+                detail, fatal = self._describe_session_error(e)
+                print(f"[JARVIS] ⚠️ {detail}")
                 traceback.print_exc()
-                self._publish_mic_diag("offline", force=True, detail="Voice session disconnected. Retrying...")
-                self._publish_runtime_status("retrying", "idle", force=True, detail="Live session disconnected. Retrying in 3s...")
+                self.ui.write_log(f"ERR: Live session failed ({detail})")
+                self._publish_mic_diag("offline", force=True, detail=detail)
+                if fatal:
+                    self._publish_runtime_status("error", "idle", force=True, detail="Fatal live-session error. Fix credentials/config before retrying.")
+                    self.set_speaking(False)
+                    self.ui.set_state("THINKING")
+                    self._reset_live_state()
+                    print("[JARVIS] ⛔ Fatal live-session error. Waiting 30s before retry...")
+                    await asyncio.sleep(30)
+                    continue
+
+                self._publish_runtime_status(
+                    "retrying",
+                    "idle",
+                    force=True,
+                    detail=f"Reconnect attempt {self._reconnect_attempt}. Retrying in {wait_seconds:.0f}s...",
+                )
+                self.ui.write_log(f"SYS: Reconnect attempt {self._reconnect_attempt} in {wait_seconds:.0f}s")
+                reconnect_delay = min(reconnect_delay * 1.6, max_reconnect_delay)
             self.set_speaking(False)
             self.ui.set_state("THINKING")
-            print("[JARVIS] 🔄 Reconnecting in 3s...")
-            await asyncio.sleep(3)
+            self._reset_live_state()
+            print(f"[JARVIS] 🔄 Reconnecting in {wait_seconds:.0f}s...")
+            await asyncio.sleep(wait_seconds)
 
 def main():
     ui = JarvisUI("face.png")
