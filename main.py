@@ -9,8 +9,6 @@ from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
-from google import genai
-from google.genai import types
 from ui import JarvisUI
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
@@ -20,8 +18,8 @@ from memory.session_memory import (
     get_session_context,
 )
 from core.config import (
-    get_base_dir, load_config, get_api_key, get_audio_device,
-    load_system_prompt, API_CONFIG_PATH, PROMPT_PATH,
+    load_config, get_audio_device,
+    load_system_prompt,
 )
 from core.tools import TOOL_DECLARATIONS
 
@@ -548,10 +546,7 @@ class JarvisLive:
             stream.close()
 
     async def run(self):
-        client = genai.Client(
-            api_key=get_api_key(),
-            http_options={"api_version": "v1beta"}
-        )
+        client = get_live_client()
 
         reconnect_delay = 3.0
         max_reconnect_delay = 30.0
