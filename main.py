@@ -50,9 +50,38 @@ SEND_SAMPLE_RATE    = 16000
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE          = 1024
 
+
+def _load_config() -> dict:
+    try:
+        with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    return _load_config()["gemini_api_key"]
+
+
+def _get_audio_device(kind: str):
+    key = "input_device" if kind == "input" else "output_device"
+    value = _load_config().get(key)
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _describe_audio_device(kind: str) -> str:
+    device = _get_audio_device(kind)
+    if device is None:
+        return "system default"
+    try:
+        info = sd.query_devices(device, kind)
+        return f"{device}: {info['name']}"
+    except Exception:
+        return f"device {device}"
 
 
 def _load_system_prompt() -> str:
@@ -726,6 +755,8 @@ class JarvisLive:
         print("[JARVIS] 🎤 Mic started")
         loop = asyncio.get_event_loop()
         signal_threshold = 0.015
+        input_device = _get_audio_device("input")
+        input_label = _describe_audio_device("input")
 
         def callback(indata, frames, time_info, status):
             with self._speaking_lock:
@@ -760,6 +791,7 @@ class JarvisLive:
 
         try:
             with sd.InputStream(
+                device=input_device,
                 samplerate=SEND_SAMPLE_RATE,
                 channels=CHANNELS,
                 dtype="int16",
@@ -767,8 +799,8 @@ class JarvisLive:
                 callback=callback,
             ):
                 print("[JARVIS] 🎤 Mic stream open")
-                self._publish_mic_diag("ready", force=True)
-                self.ui.write_log("SYS: Microphone stream open.")
+                self._publish_mic_diag("ready", force=True, detail=f"Using mic: {input_label}")
+                self.ui.write_log(f"SYS: Microphone stream open ({input_label}).")
                 while True:
                     await asyncio.sleep(0.1)
         except Exception as e:
@@ -832,14 +864,18 @@ class JarvisLive:
 
     async def _play_audio(self):
         print("[JARVIS] 🔊 Play started")
+        output_device = _get_audio_device("output")
+        output_label = _describe_audio_device("output")
 
         stream = sd.RawOutputStream(
+            device=output_device,
             samplerate=RECEIVE_SAMPLE_RATE,
             channels=CHANNELS,
             dtype="int16",
             blocksize=CHUNK_SIZE,
         )
         stream.start()
+        self.ui.write_log(f"SYS: Audio output ready ({output_label}).")
 
         try:
             while True:

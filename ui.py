@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import psutil
+import sounddevice as sd
 
 from PyQt6.QtCore import (
     QEasingCurve, QMimeData, QObject, QPointF, QRectF, QSize, Qt,
@@ -23,7 +24,7 @@ from PyQt6.QtGui import (
     QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QTextEdit,
     QVBoxLayout, QWidget, QProgressBar,
 )
@@ -36,6 +37,45 @@ def _base_dir() -> Path:
 BASE_DIR   = _base_dir()
 CONFIG_DIR = BASE_DIR / "config"
 API_FILE   = CONFIG_DIR / "api_keys.json"
+
+
+def _load_app_config() -> dict:
+    try:
+        return json.loads(API_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_app_config(**updates) -> None:
+    cfg = _load_app_config()
+    cfg.update(updates)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    API_FILE.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+
+
+def _audio_device_options(kind: str) -> list[tuple[int, str]]:
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return []
+
+    default_idx = None
+    try:
+        defaults = sd.default.device
+        default_idx = defaults[0] if kind == "input" else defaults[1]
+    except Exception:
+        pass
+
+    options: list[tuple[int, str]] = []
+    channel_key = "max_input_channels" if kind == "input" else "max_output_channels"
+    for idx, info in enumerate(devices):
+        if int(info.get(channel_key, 0) or 0) <= 0:
+            continue
+        label = f"{idx}: {info['name']}"
+        if default_idx == idx:
+            label += " [default]"
+        options.append((idx, label))
+    return options
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
 _MIN_W,     _MIN_H     = 820, 580
@@ -1362,8 +1402,104 @@ class MainWindow(QMainWindow):
         self._mic_detail_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
         lay.addWidget(self._mic_detail_lbl)
 
+        lay.addSpacing(6)
+        lay.addWidget(self._build_audio_device_selectors())
+
         return panel
 
+    def _build_audio_device_selectors(self) -> QWidget:
+        panel = QWidget()
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        self._mic_select = QComboBox()
+        self._speaker_select = QComboBox()
+        for combo in [self._mic_select, self._speaker_select]:
+            combo.setFont(QFont("Courier New", 7))
+            combo.setFixedHeight(24)
+            combo.setStyleSheet(f"""
+                QComboBox {{
+                    background: #000d12; color: {C.TEXT};
+                    border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 6px;
+                }}
+                QComboBox:hover {{ border: 1px solid {C.BORDER_B}; }}
+                QComboBox::drop-down {{ border: none; width: 20px; }}
+            """)
+
+        mic_lbl = QLabel("MIC SOURCE")
+        mic_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        mic_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(mic_lbl)
+        lay.addWidget(self._mic_select)
+
+        speaker_lbl = QLabel("SPEAKER OUT")
+        speaker_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        speaker_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(speaker_lbl)
+        lay.addWidget(self._speaker_select)
+
+        self._mic_select.currentIndexChanged.connect(self._save_selected_input_device)
+        self._speaker_select.currentIndexChanged.connect(self._save_selected_output_device)
+        self._populate_audio_device_selectors()
+
+        return panel
+
+    def _populate_audio_device_selectors(self):
+        cfg = _load_app_config()
+        selected_input = cfg.get("input_device")
+        selected_output = cfg.get("output_device")
+
+        self._mic_select.blockSignals(True)
+        self._speaker_select.blockSignals(True)
+
+        self._mic_select.clear()
+        self._speaker_select.clear()
+
+        mic_options = _audio_device_options("input")
+        speaker_options = _audio_device_options("output")
+
+        for idx, label in mic_options:
+            self._mic_select.addItem(label, idx)
+        for idx, label in speaker_options:
+            self._speaker_select.addItem(label, idx)
+
+        self._set_combo_to_device(self._mic_select, selected_input)
+        self._set_combo_to_device(self._speaker_select, selected_output)
+
+        self._mic_select.blockSignals(False)
+        self._speaker_select.blockSignals(False)
+
+    @staticmethod
+    def _set_combo_to_device(combo: QComboBox, device_value):
+        if combo.count() == 0 or device_value is None:
+            return
+        try:
+            target = int(device_value)
+        except (TypeError, ValueError):
+            return
+        for i in range(combo.count()):
+            if combo.itemData(i) == target:
+                combo.setCurrentIndex(i)
+                return
+
+    def _save_selected_input_device(self, index: int):
+        if index < 0:
+            return
+        device = self._mic_select.itemData(index)
+        if device is None:
+            return
+        _save_app_config(input_device=int(device))
+        self._log.append_log("SYS: Input device saved. Reconnect Jarvis to apply.")
+
+    def _save_selected_output_device(self, index: int):
+        if index < 0:
+            return
+        device = self._speaker_select.itemData(index)
+        if device is None:
+            return
+        _save_app_config(output_device=int(device))
+        self._log.append_log("SYS: Output device saved. Reconnect Jarvis to apply.")
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
         self._input = QLineEdit()
@@ -1521,12 +1657,8 @@ class MainWindow(QMainWindow):
             self._mic_detail_lbl.setText(detail_map.get(status, ""))
 
     def _check_config(self) -> bool:
-        if not API_FILE.exists(): return False
-        try:
-            d = json.loads(API_FILE.read_text(encoding="utf-8"))
-            return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
-        except Exception:
-            return False
+        d = _load_app_config()
+        return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
 
     def _show_setup(self):
         ov = SetupOverlay(self.centralWidget())
@@ -1542,11 +1674,7 @@ class MainWindow(QMainWindow):
         self._overlay = ov
 
     def _on_setup_done(self, key: str, os_name: str):
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        API_FILE.write_text(
-            json.dumps({"gemini_api_key": key, "os_system": os_name}, indent=4),
-            encoding="utf-8",
-        )
+        _save_app_config(gemini_api_key=key, os_system=os_name)
         self._ready = True
         if self._overlay:
             self._overlay.hide()
