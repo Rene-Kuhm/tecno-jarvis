@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Any
 
+from memory.session_memory import (
+    record_task_start, record_task_complete, record_task_fail,
+)
+
 
 class TaskStatus(Enum):
     PENDING    = "pending"
@@ -95,6 +99,7 @@ class TaskQueue:
             self._condition.notify()
 
         print(f"[TaskQueue] 📥 Task queued: [{task_id}] {goal[:60]}")
+        record_task_start(task_id, goal)
         return task_id
 
     def cancel(self, task_id: str) -> bool:
@@ -187,6 +192,7 @@ class TaskQueue:
                 else:
                     task.status = TaskStatus.COMPLETED
                     task.result = result
+                    record_task_complete(task.task_id, str(result))
                 self._active_count -= 1
 
             if task.on_complete and not task.cancel_flag.is_set():
@@ -201,6 +207,7 @@ class TaskQueue:
             with self._lock:
                 task.status = TaskStatus.FAILED
                 task.error  = str(e)
+                record_task_fail(task.task_id, str(e))
                 self._active_count -= 1
             print(f"[TaskQueue] ❌ Failed: [{task.task_id}] {e}")
 
