@@ -1500,7 +1500,6 @@ class MainWindow(QMainWindow):
             return
         _save_app_config(output_device=int(device))
         self._log.append_log("SYS: Output device saved. Reconnect Jarvis to apply.")
-
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
         self._input = QLineEdit()
