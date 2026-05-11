@@ -205,8 +205,12 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "angle": {"type": "STRING", "description": "'screen' to capture display, 'camera' for webcam. Default: 'screen'"},
-                "text":  {"type": "STRING", "description": "The question or instruction about the captured image"}
+                "angle": {"type": "STRING", "description": "'screen' (full display), 'camera' (webcam), 'window' (active window), 'region' (specific area). Default: 'screen'"},
+                "text":  {"type": "STRING", "description": "The question or instruction about the captured image"},
+                "left":   {"type": "INTEGER", "description": "X offset for region capture"},
+                "top":    {"type": "INTEGER", "description": "Y offset for region capture"},
+                "width":  {"type": "INTEGER", "description": "Width for region capture (default: 800)"},
+                "height": {"type": "INTEGER", "description": "Height for region capture (default: 600)"},
             },
             "required": ["text"]
         }
@@ -1065,6 +1069,14 @@ def main():
 
     def runner():
         ui.wait_for_api_key()
+
+        try:
+            from actions.screen_processor import warmup_session
+            warmup_session(player=ui)
+            print("[JARVIS] 👁️ Vision session pre-warmed")
+        except Exception as e:
+            print(f"[JARVIS] ⚠️ Vision warmup skipped: {e}")
+
         jarvis = JarvisLive(ui)
         try:
             asyncio.run(jarvis.run())

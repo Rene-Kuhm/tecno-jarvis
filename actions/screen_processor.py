@@ -77,17 +77,20 @@ _CHANNELS           = 1
 _RECEIVE_SAMPLE_RATE = 24_000
 _CHUNK_SIZE         = 1_024
 
-_IMG_MAX_W = 640
-_IMG_MAX_H = 360
-_JPEG_Q    = 60
+_IMG_MAX_W = 800
+_IMG_MAX_H = 450
+_JPEG_Q    = 50
+_CAMERA_WARMUP_FRAMES = 5
 
 _SYSTEM_PROMPT = (
-    "You are JARVIS, an advanced AI assistant. "
-    "Analyze the provided image with precision and intelligence. "
-    "Be concise and direct — maximum two sentences unless the user's question "
-    "requires more detail. "
-    "Address the user respectfully. "
-    "Always call the appropriate tool; never simulate results."
+    "You are JARVIS, Tony Stark's personal AI assistant. You have been given an image to analyze.\n"
+    "Rules:\n"
+    "- Address the user as 'sir' and be direct — never recite facts or fill with fluff.\n"
+    "- Answer the user's question about the image. Maximum 2-3 sentences unless more detail is needed.\n"
+    "- Describe what you see ONLY when asked 'what do you see' or similar.\n"
+    "- If you see text, code, or data, read it back or summarize it accurately.\n"
+    "- Always execute tools when requested. Never simulate or guess results.\n"
+    "- Stay in character. You are a capable, slightly sarcastic AI assistant."
 )
 
 
@@ -97,9 +100,9 @@ def _compress(img_bytes: bytes, source_format: str = "PNG") -> tuple[bytes, str]
 
     try:
         img = PIL.Image.open(io.BytesIO(img_bytes)).convert("RGB")
-        img.thumbnail((_IMG_MAX_W, _IMG_MAX_H), PIL.Image.BILINEAR)
+        img.thumbnail((_IMG_MAX_W, _IMG_MAX_H), PIL.Image.LANCZOS)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=_JPEG_Q, optimize=False)
+        img.save(buf, format="JPEG", quality=_JPEG_Q, optimize=True, progressive=True)
         return buf.getvalue(), "image/jpeg"
     except Exception as e:
         print(f"[Vision] ⚠️  Image compress failed: {e}")
@@ -117,6 +120,45 @@ def _capture_screen() -> tuple[bytes, str]:
         png      = mss.tools.to_png(shot.rgb, shot.size)
 
     return _compress(png, "PNG")
+
+
+def _capture_region(left: int, top: int, width: int, height: int) -> tuple[bytes, str]:
+    if not _MSS:
+        raise RuntimeError("mss is not installed. Run: pip install mss")
+
+    with mss.mss() as sct:
+        region = {"left": left, "top": top, "width": width, "height": height}
+        shot = sct.grab(region)
+        png = mss.tools.to_png(shot.rgb, shot.size)
+
+    return _compress(png, "PNG")
+
+
+def _capture_active_window() -> tuple[bytes, str] | None:
+    try:
+        import win32gui
+        import win32con
+    except ImportError:
+        return None
+
+    try:
+        hwnd = win32gui.GetForegroundWindow()
+        if not hwnd or not win32gui.IsWindowVisible(hwnd):
+            return None
+
+        rect = win32gui.GetWindowRect(hwnd)
+        left, top, right, bottom = rect
+        w = right - left
+        h = bottom - top
+
+        if w <= 0 or h <= 0 or w > 10000 or h > 10000:
+            return None
+
+        print(f"[Vision] 🪟 Active window: {w}x{h} at ({left}, {top})")
+        return _capture_region(left, top, w, h)
+    except Exception as e:
+        print(f"[Vision] ⚠️  Active window capture failed: {e}")
+        return None
 
 
 def _cv2_backend() -> int:
@@ -182,7 +224,7 @@ def _capture_camera() -> tuple[bytes, str]:
     if not cap.isOpened():
         raise RuntimeError(f"Camera index {index} could not be opened.")
 
-    for _ in range(10):
+    for _ in range(_CAMERA_WARMUP_FRAMES):
         cap.read()
 
     ret, frame = cap.read()
@@ -191,16 +233,33 @@ def _capture_camera() -> tuple[bytes, str]:
     if not ret or frame is None:
         raise RuntimeError("Camera returned no frame.")
 
+    if _mean_brightness(frame) < 5.0:
+        cap = cv2.VideoCapture(index, backend)
+        for _ in range(_CAMERA_WARMUP_FRAMES * 2):
+            cap.read()
+        ret, frame = cap.read()
+        cap.release()
+        if not ret or frame is None or _mean_brightness(frame) < 5.0:
+            raise RuntimeError("Camera image is too dark — cover removed or lens blocked?")
+
     if _PIL:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = PIL.Image.fromarray(rgb)
-        img.thumbnail((_IMG_MAX_W, _IMG_MAX_H), PIL.Image.BILINEAR)
+        img.thumbnail((_IMG_MAX_W, _IMG_MAX_H), PIL.Image.LANCZOS)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=_JPEG_Q)
+        img.save(buf, format="JPEG", quality=_JPEG_Q, optimize=True, progressive=True)
         return buf.getvalue(), "image/jpeg"
 
     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_Q])
     return buf.tobytes(), "image/jpeg"
+
+
+def _mean_brightness(frame) -> float:
+    try:
+        import numpy as np
+        return float(np.mean(frame))
+    except Exception:
+        return 100.0
 
 class _VisionSession:
     def __init__(self):
@@ -408,6 +467,21 @@ def screen_process(
         if angle == "camera":
             image_bytes, mime_type = _capture_camera()
             print(f"[Vision] 📷 Camera: {len(image_bytes):,} bytes")
+        elif angle == "window":
+            result = _capture_active_window()
+            if result is None:
+                print("[Vision] ⚠️  Active window capture failed — falling back to full screen")
+                image_bytes, mime_type = _capture_screen()
+            else:
+                image_bytes, mime_type = result
+            print(f"[Vision] 🪟 Window: {len(image_bytes):,} bytes")
+        elif angle == "region":
+            left   = int(params.get("left", 0))
+            top    = int(params.get("top", 0))
+            width  = int(params.get("width", 800))
+            height = int(params.get("height", 600))
+            image_bytes, mime_type = _capture_region(left, top, width, height)
+            print(f"[Vision] ✂️  Region ({left},{top} {width}x{height}): {len(image_bytes):,} bytes")
         else:
             image_bytes, mime_type = _capture_screen()
             print(f"[Vision] 🖥️  Screen: {len(image_bytes):,} bytes")
