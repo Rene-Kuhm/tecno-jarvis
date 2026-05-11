@@ -1028,6 +1028,7 @@ class MainWindow(QMainWindow):
     _log_sig   = pyqtSignal(str)
     _state_sig = pyqtSignal(str)
     _audio_diag_sig = pyqtSignal(object)
+    _runtime_sig = pyqtSignal(object)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1085,6 +1086,7 @@ class MainWindow(QMainWindow):
         self._log_sig.connect(self._log.append_log)
         self._state_sig.connect(self._apply_state)
         self._audio_diag_sig.connect(self._apply_audio_diag)
+        self._runtime_sig.connect(self._apply_runtime_status)
 
         self._overlay: SetupOverlay | None = None
         self._ready = self._check_config()
@@ -1325,6 +1327,12 @@ class MainWindow(QMainWindow):
         sep3.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep3)
 
+        lay.addWidget(_sec("REALTIME STATUS"))
+        lay.addWidget(self._build_runtime_panel())
+
+        sep4 = QFrame(); sep4.setFrameShape(QFrame.Shape.HLine)
+        sep4.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
+        lay.addWidget(sep4)
         lay.addWidget(_sec("COMMAND INPUT"))
         lay.addLayout(self._build_input_row())
 
@@ -1445,6 +1453,52 @@ class MainWindow(QMainWindow):
 
         return panel
 
+    def _build_runtime_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setStyleSheet(
+            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+        )
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(6, 5, 6, 5)
+        lay.setSpacing(3)
+
+        self._runtime_session_lbl = QLabel("SESSION  OFFLINE")
+        self._runtime_session_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._runtime_session_lbl.setStyleSheet(f"color: {C.RED}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_session_lbl)
+
+        self._runtime_stream_lbl = QLabel("STREAM   IDLE")
+        self._runtime_stream_lbl.setFont(QFont("Courier New", 8))
+        self._runtime_stream_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_stream_lbl)
+
+        self._runtime_last_tx_lbl = QLabel("TX  no traffic")
+        self._runtime_last_tx_lbl.setFont(QFont("Courier New", 7))
+        self._runtime_last_tx_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_last_tx_lbl)
+
+        self._runtime_last_rx_lbl = QLabel("RX  no traffic")
+        self._runtime_last_rx_lbl.setFont(QFont("Courier New", 7))
+        self._runtime_last_rx_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_last_rx_lbl)
+
+        self._runtime_tool_lbl = QLabel("TOOL  none")
+        self._runtime_tool_lbl.setFont(QFont("Courier New", 7))
+        self._runtime_tool_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_tool_lbl)
+
+        self._runtime_queue_lbl = QLabel("QUEUE out=0 in=0")
+        self._runtime_queue_lbl.setFont(QFont("Courier New", 7))
+        self._runtime_queue_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_queue_lbl)
+
+        self._runtime_detail_lbl = QLabel("Waiting for live session...")
+        self._runtime_detail_lbl.setFont(QFont("Courier New", 7))
+        self._runtime_detail_lbl.setWordWrap(True)
+        self._runtime_detail_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
+        lay.addWidget(self._runtime_detail_lbl)
+
+        return panel
     def _populate_audio_device_selectors(self):
         cfg = _load_app_config()
         selected_input = cfg.get("input_device")
@@ -1656,6 +1710,40 @@ class MainWindow(QMainWindow):
             }
             self._mic_detail_lbl.setText(detail_map.get(status, ""))
 
+    def _apply_runtime_status(self, payload: dict):
+        session = str(payload.get("session", "offline")).lower()
+        stream = str(payload.get("stream", "idle")).upper()
+        last_tx = payload.get("last_tx_age")
+        last_rx = payload.get("last_rx_age")
+        active_tool = str(payload.get("active_tool", "") or "none")
+        out_queue = int(payload.get("out_queue", 0) or 0)
+        in_queue = int(payload.get("in_queue", 0) or 0)
+        detail = str(payload.get("detail", "")).strip()
+
+        session_map = {
+            "offline": ("SESSION  OFFLINE", C.RED),
+            "connecting": ("SESSION  CONNECTING", C.ACC2),
+            "online": ("SESSION  ONLINE", C.GREEN),
+            "retrying": ("SESSION  RETRYING", C.ACC),
+            "error": ("SESSION  ERROR", C.RED),
+        }
+        session_text, session_color = session_map.get(
+            session, (f"SESSION  {session.upper()}", C.TEXT_MED)
+        )
+        self._runtime_session_lbl.setText(session_text)
+        self._runtime_session_lbl.setStyleSheet(
+            f"color: {session_color}; background: transparent; border: none;"
+        )
+        self._runtime_stream_lbl.setText(f"STREAM   {stream}")
+        self._runtime_last_tx_lbl.setText(
+            "TX  no traffic" if not isinstance(last_tx, (int, float)) else f"TX  {last_tx:.1f}s ago"
+        )
+        self._runtime_last_rx_lbl.setText(
+            "RX  no traffic" if not isinstance(last_rx, (int, float)) else f"RX  {last_rx:.1f}s ago"
+        )
+        self._runtime_tool_lbl.setText(f"TOOL  {active_tool}")
+        self._runtime_queue_lbl.setText(f"QUEUE out={out_queue} in={in_queue}")
+        self._runtime_detail_lbl.setText(detail or "Live session active.")
     def _check_config(self) -> bool:
         d = _load_app_config()
         return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
@@ -1731,6 +1819,30 @@ class JarvisUI:
             {"status": status, "level": level, "age": age, "detail": detail}
         )
 
+    def update_runtime_status(
+        self,
+        *,
+        session: str,
+        stream: str = "idle",
+        last_tx_age: float | None = None,
+        last_rx_age: float | None = None,
+        active_tool: str = "none",
+        out_queue: int = 0,
+        in_queue: int = 0,
+        detail: str = "",
+    ):
+        self._win._runtime_sig.emit(
+            {
+                "session": session,
+                "stream": stream,
+                "last_tx_age": last_tx_age,
+                "last_rx_age": last_rx_age,
+                "active_tool": active_tool,
+                "out_queue": out_queue,
+                "in_queue": in_queue,
+                "detail": detail,
+            }
+        )
     def wait_for_api_key(self):
         while not self._win._ready:
             time.sleep(0.1)

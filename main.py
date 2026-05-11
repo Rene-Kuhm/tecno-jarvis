@@ -526,6 +526,10 @@ class JarvisLive:
         self._mic_last_publish = 0.0
         self._mic_last_signal_at: float | None = None
         self._mic_status = "offline"
+        self._runtime_last_publish = 0.0
+        self._last_realtime_sent_at: float | None = None
+        self._last_realtime_recv_at: float | None = None
+        self._active_tool = "none"
 
     def _publish_mic_diag(self, status: str, level: float = 0.0, *, force: bool = False, detail: str = ""):
         now = time.monotonic()
@@ -539,6 +543,28 @@ class JarvisLive:
         self._mic_status = status
         self._mic_last_publish = now
         self.ui.update_audio_diag(status=status, level=level, age=age, detail=detail)
+
+    def _publish_runtime_status(self, session: str, stream: str = "idle", *, force: bool = False, detail: str = ""):
+        now = time.monotonic()
+        if not force and (now - self._runtime_last_publish) < 0.2:
+            return
+
+        last_tx_age = None if self._last_realtime_sent_at is None else max(0.0, now - self._last_realtime_sent_at)
+        last_rx_age = None if self._last_realtime_recv_at is None else max(0.0, now - self._last_realtime_recv_at)
+        out_queue = self.out_queue.qsize() if self.out_queue is not None else 0
+        in_queue = self.audio_in_queue.qsize() if self.audio_in_queue is not None else 0
+
+        self._runtime_last_publish = now
+        self.ui.update_runtime_status(
+            session=session,
+            stream=stream,
+            last_tx_age=last_tx_age,
+            last_rx_age=last_rx_age,
+            active_tool=self._active_tool,
+            out_queue=out_queue,
+            in_queue=in_queue,
+            detail=detail,
+        )
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -617,6 +643,8 @@ class JarvisLive:
 
         print(f"[JARVIS] 🔧 {name}  {args}")
         self.ui.set_state("THINKING")
+        self._active_tool = name
+        self._publish_runtime_status("online", "tool", force=True, detail=f"Executing tool: {name}")
 
         if name == "save_memory":
             category = args.get("category", "notes")
@@ -740,6 +768,9 @@ class JarvisLive:
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
 
+        self._active_tool = "none"
+        self._publish_runtime_status("online", "idle", force=True, detail=f"Last tool: {name}")
+
         print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
         return types.FunctionResponse(
             id=fc.id, name=name,
@@ -749,6 +780,8 @@ class JarvisLive:
     async def _send_realtime(self):
         while True:
             msg = await self.out_queue.get()
+            self._last_realtime_sent_at = time.monotonic()
+            self._publish_runtime_status("online", "sending", detail="Sending audio/text to Gemini Live")
             await self.session.send_realtime_input(media=msg)
 
     async def _listen_audio(self):
@@ -817,6 +850,8 @@ class JarvisLive:
                 async for response in self.session.receive():
 
                     if response.data:
+                        self._last_realtime_recv_at = time.monotonic()
+                        self._publish_runtime_status("online", "receiving", detail="Receiving realtime audio from Gemini Live")
                         if self._turn_done_event and self._turn_done_event.is_set():
                             self._turn_done_event.clear()
                         self.audio_in_queue.put_nowait(response.data)
@@ -849,6 +884,8 @@ class JarvisLive:
                             out_buf = []
 
                     if response.tool_call:
+                        self._last_realtime_recv_at = time.monotonic()
+                        self._publish_runtime_status("online", "tool", force=True, detail="Gemini requested tool execution")
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
                             print(f"[JARVIS] 📞 {fc.name}")
@@ -913,6 +950,7 @@ class JarvisLive:
             try:
                 print("[JARVIS] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
+                self._publish_runtime_status("connecting", "idle", force=True, detail="Connecting to Gemini Live...")
                 config = self._build_config()
 
                 async with (
@@ -929,6 +967,7 @@ class JarvisLive:
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: JARVIS online.")
                     self._publish_mic_diag("offline", force=True, detail="Voice session connected. Opening microphone stream...")
+                    self._publish_runtime_status("online", "idle", force=True, detail="Live session connected.")
 
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
@@ -939,6 +978,7 @@ class JarvisLive:
                 print(f"[JARVIS] ⚠️ {e}")
                 traceback.print_exc()
                 self._publish_mic_diag("offline", force=True, detail="Voice session disconnected. Retrying...")
+                self._publish_runtime_status("retrying", "idle", force=True, detail="Live session disconnected. Retrying in 3s...")
             self.set_speaking(False)
             self.ui.set_state("THINKING")
             print("[JARVIS] 🔄 Reconnecting in 3s...")
