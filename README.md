@@ -4,7 +4,7 @@ Tecno--J.A.R.V.I.S es un asistente de escritorio con interfaz HUD futurista, voz
 
 ![Tecno--J.A.R.V.I.S abierto](docs/images/tecno-jarvis-open.png)
 
-![Tecno--J.A.R.V.I.S arrancando](docs/images/tecno-jarvis-startup.png)
+![Tecno--J.A.R.V.I.S arrancando](docs/images/paragithub.png)
 
 ## Que puede hacer
 
