@@ -1030,6 +1030,9 @@ class BootSequence:
         self._overlay.done.connect(self._overlay.deleteLater)
         self._overlay.show()
         self._overlay.raise_()
+
+
+class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
