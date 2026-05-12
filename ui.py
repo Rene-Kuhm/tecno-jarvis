@@ -83,8 +83,8 @@ def _audio_device_options(kind: str) -> list[tuple[int, str]]:
 
 _DEFAULT_W, _DEFAULT_H = 980, 700
 _MIN_W,     _MIN_H     = 820, 580
-_LEFT_W  = 148
-_RIGHT_W = 340
+_LEFT_W  = 172
+_RIGHT_W = 366
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
@@ -144,15 +144,32 @@ def _iron_font(size: int, bold: bool = False, letter_spacing: float = -0.5) -> Q
 
 def glass_card_qss():
     return f"""
-    QFrame {{
+    QFrame#hudPanel {{
         background: qlineargradient(
             x1:0, y1:0, x2:1, y2:1,
-            stop:0 rgba(4, 24, 36, 220),
-            stop:0.45 rgba(4, 18, 28, 190),
-            stop:1 rgba(0, 60, 80, 110)
+            stop:0 rgba(5, 42, 58, 238),
+            stop:0.36 rgba(3, 18, 30, 218),
+            stop:0.70 rgba(0, 54, 76, 158),
+            stop:1 rgba(255, 159, 28, 42)
         );
-        border: 1px solid rgba(0, 229, 255, 80);
-        border-radius: 10px;
+        border: 2px solid rgba(0, 229, 255, 150);
+        border-radius: 14px;
+    }}
+    """
+
+def panel_shell_qss(side: str):
+    edge = "right" if side == "left" else "left"
+    return f"""
+    QFrame#sideRail {{
+        background: qlineargradient(
+            x1:0, y1:0, x2:1, y2:0,
+            stop:0 rgba(0, 6, 12, 255),
+            stop:0.18 rgba(0, 42, 58, 235),
+            stop:0.52 rgba(1, 10, 18, 248),
+            stop:0.84 rgba(0, 58, 82, 225),
+            stop:1 rgba(255, 159, 28, 40)
+        );
+        border-{edge}: 2px solid rgba(0, 229, 255, 180);
     }}
     """
 
@@ -204,19 +221,31 @@ def _title_sep():
 
 
 class HudPanel(QFrame):
-    def __init__(self, title="", parent=None):
+    def __init__(self, title="", parent=None, accent: str = C.PRI):
         super().__init__(parent)
         self._panel_title = title
+        self._accent = accent
+        self._pulse = 0.0
+        self.setObjectName("hudPanel")
         self.setStyleSheet(glass_card_qss())
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(10, 8, 10, 8)
-        self._layout.setSpacing(4)
+        self._layout.setContentsMargins(12, 10, 12, 10)
+        self._layout.setSpacing(6)
+
+        self._tmr = QTimer(self)
+        self._tmr.timeout.connect(self._animate)
+        self._tmr.start(45)
 
         if title:
-            tl = QLabel(f"\u25B8 {title}")
+            tl = QLabel(f"// {title}")
             tl.setStyleSheet(section_title_qss())
             self._layout.addWidget(tl)
             self._layout.addWidget(_title_sep())
+
+    def _animate(self):
+        self._pulse = (self._pulse + 0.08) % 6.2832
+        self.update()
 
     def add_widget(self, w):
         self._layout.addWidget(w)
@@ -229,13 +258,79 @@ class HudPanel(QFrame):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W, H = self.width(), self.height()
-        pen = QPen(QColor(0, 229, 255, 180), 1.5)
+
+        sweep = (math.sin(self._pulse) + 1.0) * 0.5
+        glow_a = 95 + int(sweep * 90)
+
+        gradient = QLinearGradient(0, 0, W, H)
+        gradient.setColorAt(0.00, QColor(0, 229, 255, 34))
+        gradient.setColorAt(0.42, QColor(0, 18, 28, 0))
+        gradient.setColorAt(1.00, QColor(255, 159, 28, 24))
+        p.setBrush(QBrush(gradient))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(QRectF(3, 3, W - 6, H - 6), 12, 12)
+
+        p.setPen(QPen(QColor(0, 229, 255, 24), 1))
+        for y in range(16, H - 8, 18):
+            p.drawLine(10, y, W - 10, y)
+
+        accent = QColor(self._accent)
+        accent.setAlpha(glow_a)
+        p.setPen(QPen(accent, 2.5))
+        p.drawLine(9, 7, W - 28, 7)
+        p.drawLine(28, H - 8, W - 9, H - 8)
+
+        pen = QPen(QColor(0, 229, 255, 220), 2.2)
         p.setPen(pen)
-        L = 14
+        L = 22
         p.drawLine(0, 0, L, 0); p.drawLine(0, 0, 0, L)
         p.drawLine(W - L, 0, W, 0); p.drawLine(W - 1, 0, W - 1, L)
         p.drawLine(0, H - L, 0, H); p.drawLine(0, H - 1, L, H - 1)
         p.drawLine(W - L, H - 1, W, H - 1); p.drawLine(W - 1, H - L, W - 1, H)
+
+        p.setPen(QPen(QColor(255, 216, 77, 110), 1.2))
+        p.drawLine(W - 34, 12, W - 12, 12)
+        p.drawLine(12, H - 13, 34, H - 13)
+
+
+class SideRail(QFrame):
+    def __init__(self, side: str, parent=None):
+        super().__init__(parent)
+        self._side = side
+        self._pulse = 0.0
+        self.setObjectName("sideRail")
+        self.setStyleSheet(panel_shell_qss(side))
+        self._tmr = QTimer(self)
+        self._tmr.timeout.connect(self._animate)
+        self._tmr.start(60)
+
+    def _animate(self):
+        self._pulse = (self._pulse + 0.045) % 6.2832
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        edge_x = W - 4 if self._side == "left" else 4
+        pulse = (math.sin(self._pulse) + 1.0) * 0.5
+
+        p.setPen(QPen(QColor(0, 229, 255, 44), 1))
+        for y in range(18, H, 28):
+            if self._side == "left":
+                p.drawLine(8, y, W - 18, y + 10)
+            else:
+                p.drawLine(18, y + 10, W - 8, y)
+
+        p.setPen(QPen(QColor(0, 229, 255, 150 + int(pulse * 75)), 2.4))
+        p.drawLine(edge_x, 12, edge_x, H - 12)
+        for y in range(34, H - 20, 58):
+            p.drawLine(edge_x, y, edge_x + (-18 if self._side == "left" else 18), y)
+
+        p.setPen(QPen(QColor(255, 159, 28, 95), 1.4))
+        for y in range(58, H - 20, 116):
+            p.drawLine(edge_x, y, edge_x + (-28 if self._side == "left" else 28), y + 10)
 
 
 class _SysMetrics:
@@ -824,18 +919,25 @@ class MetricBar(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W, H = self.width(), self.height()
 
-        p.setBrush(QBrush(qcol(C.PANEL, 200)))
-        p.setPen(QPen(qcol(C.BORDER, 120), 1))
-        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 5, 5)
+        bg = QLinearGradient(0, 0, W, H)
+        bg.setColorAt(0, QColor(0, 42, 58, 180))
+        bg.setColorAt(0.55, QColor(1, 10, 18, 220))
+        bg.setColorAt(1, QColor(255, 159, 28, 28))
+        p.setBrush(QBrush(bg))
+        p.setPen(QPen(qcol(C.BORDER_ACTIVE, 150), 1.2))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 7, 7)
+        p.setPen(QPen(QColor(0, 229, 255, 70), 1))
+        p.drawLine(8, 8, W - 36, 8)
+        p.drawLine(W - 24, 8, W - 10, 8)
 
-        bar_h   = 5
-        bar_y   = H - bar_h - 6
+        bar_h   = 7
+        bar_y   = H - bar_h - 7
         bar_w   = W - 14
         bar_x   = 7
         fill_w  = int(bar_w * self._value / 100)
 
         p.setBrush(QBrush(qcol(C.BAR_BG)))
-        p.setPen(Qt.PenStyle.NoPen)
+        p.setPen(QPen(QColor(0, 229, 255, 55), 1))
         p.drawRoundedRect(QRectF(bar_x, bar_y, bar_w, bar_h), 2.5, 2.5)
 
         if self._value > 85:
@@ -857,6 +959,8 @@ class MetricBar(QWidget):
             gradient.setColorAt(1, QColor(c2))
             p.setBrush(QBrush(gradient))
             p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2.5, 2.5)
+            p.setPen(QPen(QColor(255, 255, 255, 115), 1))
+            p.drawLine(bar_x + max(1, fill_w - 2), bar_y - 1, bar_x + max(1, fill_w - 2), bar_y + bar_h + 1)
 
         p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.TEXT_DIM), 1))
@@ -1609,15 +1713,14 @@ class MainWindow(QMainWindow):
         self._date_lbl.setText(time.strftime("%a %d %b %Y"))
 
     def _build_left_panel(self) -> QWidget:
-        w = QWidget()
+        w = SideRail("left")
         w.setFixedWidth(_LEFT_W)
-        w.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {C.DARK_GLASS}, stop:1 rgba(1,8,13,220)); border-right: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(6, 8, 6, 8)
-        lay.setSpacing(8)
+        lay.setContentsMargins(10, 12, 12, 12)
+        lay.setSpacing(10)
 
         # Block 1: System Monitor
-        card1 = HudPanel("MONITOR SYS")
+        card1 = HudPanel("MONITOR SYS", accent=C.PRI)
         self._bar_cpu = MetricBar("CPU", C.PRI)
         self._bar_mem = MetricBar("MEM", C.GOLD)
         self._bar_net = MetricBar("NET", C.GREEN)
@@ -1628,7 +1731,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(card1)
 
         # Block 2: Machine State
-        card2 = HudPanel("ESTADO MAQUINA")
+        card2 = HudPanel("ESTADO MAQUINA", accent=C.GREEN)
         self._uptime_lbl = QLabel("UP  --:--")
         self._uptime_lbl.setFont(_iron_font(8, bold=True))
         self._uptime_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent; border: none;")
@@ -1647,7 +1750,7 @@ class MainWindow(QMainWindow):
         lay.addStretch()
 
         # Block 3: Core Status
-        card3 = HudPanel("NUCLEO")
+        card3 = HudPanel("NUCLEO", accent=C.GOLD)
         self._badge_labels = []
         for txt, col in [
             ("IA ACTIVA", C.GREEN),
@@ -1664,21 +1767,20 @@ class MainWindow(QMainWindow):
 
         return w
     def _build_right_panel(self) -> QWidget:
-        w = QWidget()
+        w = SideRail("right")
         w.setFixedWidth(_RIGHT_W)
-        w.setStyleSheet(f"background: qlineargradient(x1:1, y1:0, x2:0, y2:0, stop:0 {C.DARK_GLASS}, stop:1 rgba(1,8,13,220)); border-left: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(6, 6, 6, 6)
-        lay.setSpacing(6)
+        lay.setContentsMargins(12, 10, 10, 10)
+        lay.setSpacing(8)
 
         # Log
-        log_card = HudPanel("REGISTRO DE ACTIVIDAD")
+        log_card = HudPanel("REGISTRO DE ACTIVIDAD", accent=C.PRI)
         self._log = LogWidget()
         log_card.add_widget(self._log)
         lay.addWidget(log_card, stretch=1)
 
         # File upload
-        drop_card = HudPanel("SUBIR ARCHIVO")
+        drop_card = HudPanel("SUBIR ARCHIVO", accent=C.GOLD)
         self._drop_zone = FileDropZone()
         self._drop_zone.file_selected.connect(self._on_file_selected)
         drop_card.add_widget(self._drop_zone)
@@ -1690,17 +1792,17 @@ class MainWindow(QMainWindow):
         lay.addWidget(drop_card)
 
         # Audio diagnostics
-        audio_card = HudPanel("DIAGNOSTICO DE AUDIO")
+        audio_card = HudPanel("DIAGNOSTICO DE AUDIO", accent=C.GREEN)
         audio_card.add_widget(self._build_audio_diag_panel())
         lay.addWidget(audio_card)
 
         # Realtime status
-        rt_card = HudPanel("ESTADO EN TIEMPO REAL")
+        rt_card = HudPanel("ESTADO EN TIEMPO REAL", accent=C.ACC)
         rt_card.add_widget(self._build_runtime_panel())
         lay.addWidget(rt_card)
 
         # Command input
-        cmd_card = HudPanel("COMANDOS")
+        cmd_card = HudPanel("COMANDOS", accent=C.PRI)
         cmd_card.add_layout(self._build_input_row())
         lay.addWidget(cmd_card)
 
