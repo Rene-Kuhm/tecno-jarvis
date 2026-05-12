@@ -93,14 +93,19 @@ class C:
     BG        = "#00060a"
     PANEL     = "#010d14"
     PANEL2    = "#010f18"
+    PANEL_GLASS = "#01121a"
     BORDER    = "#0d3347"
     BORDER_B  = "#1a5c7a"
     BORDER_A  = "#0f4060"
+    BORDER_GLOW = "#1a6a8a"
     PRI       = "#00d4ff"
     PRI_DIM   = "#007a99"
     PRI_GHO   = "#001f2e"
     ACC       = "#ff6b00"
     ACC2      = "#ffcc00"
+    GOLD      = "#ffaa00"
+    GOLD_DIM  = "#664400"
+    ARC       = "#ff8800"
     GREEN     = "#00ff88"
     GREEN_D   = "#00aa55"
     RED       = "#ff3355"
@@ -108,8 +113,10 @@ class C:
     TEXT      = "#8ffcff"
     TEXT_DIM  = "#3a8a9a"
     TEXT_MED  = "#5ab8cc"
+    TEXT_GOLD = "#ddbb66"
     WHITE     = "#d8f8ff"
     DARK      = "#000d14"
+    DARK_GLASS = "#000a10"
     BAR_BG    = "#011520"
 
 
@@ -324,6 +331,8 @@ class HudCanvas(QWidget):
         self._blink      = True
         self._blink_tick = 0
         self._particles: list[list[float]] = []
+        self._hud_text_angle = 0.0
+        self._scan_line_y = 0.0
         self._face_px: QPixmap | None = None
         self._load_face(face_path)
 
@@ -402,10 +411,11 @@ class HudCanvas(QWidget):
             self._particles.append([
                 cx + math.cos(ang) * r_s, cy + math.sin(ang) * r_s,
                 math.cos(ang) * random.uniform(0.9, 2.4),
-                math.sin(ang) * random.uniform(0.9, 2.4) - 0.4, 1.0,
+                math.sin(ang) * random.uniform(0.9, 2.4) - 0.4,
+                1.0, 0 if random.random() < 0.6 else 1,
             ])
         self._particles = [
-            [p[0]+p[2], p[1]+p[3], p[2]*0.97, p[3]*0.97, p[4]-0.028]
+            [p[0]+p[2], p[1]+p[3], p[2]*0.97, p[3]*0.97, p[4]-0.028, p[5]]
             for p in self._particles if p[4] > 0
         ]
 
@@ -413,6 +423,10 @@ class HudCanvas(QWidget):
         if self._blink_tick >= 38:
             self._blink = not self._blink
             self._blink_tick = 0
+
+        self._hud_text_angle = (self._hud_text_angle + 0.3) % 360
+        self._scan_line_y = (self._scan_line_y + 1.5) % self.height() if self.height() > 0 else 0
+
         self.update()
 
     def paintEvent(self, _):
@@ -423,6 +437,16 @@ class HudCanvas(QWidget):
         W, H = self.width(), self.height()
         cx, cy = W / 2, H / 2
         fw = min(W, H)
+
+        # scanning line
+        if H > 0:
+            gradient = QLinearGradient(0, self._scan_line_y - 20, 0, self._scan_line_y + 20)
+            gradient.setColorAt(0, QColor(0, 212, 255, 0))
+            gradient.setColorAt(0.5, QColor(0, 212, 255, 25))
+            gradient.setColorAt(1, QColor(0, 212, 255, 0))
+            p.setBrush(QBrush(gradient))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRect(QRectF(0, self._scan_line_y - 20, W, 40))
 
         # hexagonal grid
         p.setPen(QPen(qcol(C.PRI_GHO), 1))
@@ -438,12 +462,16 @@ class HudCanvas(QWidget):
 
         r_face = fw * 0.31
 
-        # halo glow
+        # halo glow with gold gradient on outer rings
         for i in range(10):
             r   = r_face * (1.8 - i * 0.08)
             frc = 1.0 - i / 10
             a   = max(0, min(255, int(self._halo * 0.085 * frc)))
-            col = qcol(C.MUTED_C if self.muted else C.PRI, a)
+            mix = i / 9.0
+            r_c = int(0 * (1 - mix) + 255 * mix)
+            g_c = int(212 * (1 - mix) + 170 * mix)
+            b_c = int(255 * (1 - mix) + 0 * mix)
+            col = qcol(C.MUTED_C if self.muted else f"#{r_c:02x}{g_c:02x}{b_c:02x}", a)
             p.setPen(QPen(col, 1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QRectF(cx - r, cy - r, r * 2, r * 2))
 
@@ -536,9 +564,31 @@ class HudCanvas(QWidget):
         # particles
         for pt in self._particles:
             a = max(0, min(255, int(pt[4] * 255)))
+            p_type = pt[5] if len(pt) > 5 else 0
+            col = C.GOLD if p_type == 1 else C.PRI
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(qcol(C.PRI, a)))
+            p.setBrush(QBrush(qcol(col, a)))
             p.drawEllipse(QPointF(pt[0], pt[1]), 2.5, 2.5)
+
+        # circular HUD data
+        hud_r = fw * 0.55
+        hud_items = [
+            ("CPU", f"{_metrics.snapshot()['cpu']:.0f}%", C.GREEN),
+            ("SYS", "ACTIVO", C.PRI),
+            ("HORA", time.strftime("%H:%M"), C.ACC2),
+            ("NUC", "EN LINEA", C.GOLD),
+        ]
+        for i, (label, value, color) in enumerate(hud_items):
+            angle = math.radians(self._hud_text_angle + i * 90)
+            tx = cx + hud_r * math.cos(angle)
+            ty = cy - hud_r * math.sin(angle)
+            alpha = max(60, 180 - i * 15)
+            p.setPen(QPen(qcol(color, alpha), 1))
+            p.setFont(_iron_font(6, bold=True))
+            p.drawText(QRectF(tx - 40, ty - 7, 80, 14), Qt.AlignmentFlag.AlignCenter, label)
+            p.setFont(_iron_font(7, bold=False))
+            p.setPen(QPen(qcol(color, min(255, alpha + 40)), 1))
+            p.drawText(QRectF(tx - 40, ty + 5, 80, 14), Qt.AlignmentFlag.AlignCenter, value)
 
         # status text
         sy = cy + fw * 0.40
@@ -1309,7 +1359,7 @@ class MainWindow(QMainWindow):
     def _build_header(self) -> QWidget:
         w = QWidget()
         w.setFixedHeight(54)
-        w.setStyleSheet(f"background: {C.DARK}; border-bottom: 1px solid {C.BORDER_B};")
+        w.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {C.DARK}, stop:1 {C.DARK_GLASS}); border-bottom: 1px solid {C.BORDER_GLOW};")
         lay = QHBoxLayout(w)
         lay.setContentsMargins(16, 0, 16, 0)
 
@@ -1331,7 +1381,7 @@ class MainWindow(QMainWindow):
         sub = QLabel("Simplemente Un Sistema Bastante Inteligente")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setFont(QFont("Courier New", 7))
-        sub.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
+        sub.setStyleSheet(f"color: {C.GOLD_DIM}; background: transparent;")
         mid.addWidget(sub)
         lay.addLayout(mid)
         lay.addStretch()
@@ -1357,7 +1407,7 @@ class MainWindow(QMainWindow):
     def _build_left_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_LEFT_W)
-        w.setStyleSheet(f"background: {C.DARK}; border-right: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {C.DARK_GLASS}, stop:1 {C.DARK}); border-right: 1px solid {C.BORDER_GLOW};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(8, 10, 8, 10)
         lay.setSpacing(6)
@@ -1383,7 +1433,7 @@ class MainWindow(QMainWindow):
 
         info_panel = QWidget()
         info_panel.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+            f"background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {C.PANEL_GLASS}, stop:1 {C.PANEL}); border: 1px solid {C.BORDER_GLOW}; border-radius: 4px;"
         )
         ip_lay = QVBoxLayout(info_panel)
         ip_lay.setContentsMargins(6, 5, 6, 5)
@@ -1410,8 +1460,8 @@ class MainWindow(QMainWindow):
 
         for txt, col in [
             ("NUCLEO IA\nACTIVO",     C.GREEN),
-            ("SEGURIDAD\nVERIFICADA",        C.PRI),
-            ("PROTOCOLO\nXXXVIII",   C.TEXT_DIM),
+            ("SEGURIDAD\nVERIFICADA", C.GOLD),
+            ("PROTOCOLO\nXXXVIII",    C.TEXT_DIM),
         ]:
             lbl = QLabel(txt)
             lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
@@ -1426,7 +1476,7 @@ class MainWindow(QMainWindow):
     def _build_right_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_RIGHT_W)
-        w.setStyleSheet(f"background: {C.DARK}; border-left: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: qlineargradient(x1:1, y1:0, x2:0, y2:0, stop:0 {C.DARK_GLASS}, stop:1 {C.DARK}); border-left: 1px solid {C.BORDER_GLOW};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
@@ -1774,7 +1824,7 @@ class MainWindow(QMainWindow):
     def _build_footer(self) -> QWidget:
         w = QWidget()
         w.setFixedHeight(22)
-        w.setStyleSheet(f"background: {C.DARK}; border-top: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: qlineargradient(x1:0, y1:1, x2:0, y2:0, stop:0 {C.DARK_GLASS}, stop:1 {C.DARK}); border-top: 1px solid {C.BORDER_GLOW};")
         lay = QHBoxLayout(w); lay.setContentsMargins(14, 0, 14, 0)
 
         def _fl(txt, color=C.TEXT_MED):
