@@ -1,7 +1,6 @@
 ﻿sounddevice
 google-genai
 google-generativeai
-pillow
 requests
 beautifulsoup4
 duckduckgo-search
@@ -12,7 +11,6 @@ pygetwindow
 opencv-python
 numpy
 mss
-Pillow
 psutil
 comtypes
 pycaw               
