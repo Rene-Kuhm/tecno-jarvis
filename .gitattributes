@@ -1,0 +1,23 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Windows-specific files that MUST be CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Unix shell scripts MUST be LF
+*.sh text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.ttf binary
+*.otf binary
+*.mp3 binary
+*.mp4 binary
+*.ogg binary
+*.wav binary
