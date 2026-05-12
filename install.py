@@ -193,6 +193,41 @@ def write_launchers(check_only: bool) -> None:
         RUN_SH.chmod(0o755)
 
 
+def create_windows_shortcuts(check_only: bool) -> None:
+    if platform.system() != "Windows":
+        return
+    log("Creando accesos directos de Windows.")
+    if check_only:
+        return
+
+    script = rf"""
+$ErrorActionPreference = 'Stop'
+$root = '{ROOT}'
+$desktop = [Environment]::GetFolderPath('Desktop')
+$startMenuPrograms = Join-Path -Path ([Environment]::GetFolderPath('StartMenu')) -ChildPath 'Programs'
+$targets = @(
+    (Join-Path -Path $desktop -ChildPath 'Tecno--J.A.R.V.I.S.lnk'),
+    (Join-Path -Path $startMenuPrograms -ChildPath 'Tecno--J.A.R.V.I.S.lnk')
+)
+$shell = New-Object -ComObject WScript.Shell
+foreach ($path in $targets) {{
+    $shortcut = $shell.CreateShortcut($path)
+    $shortcut.TargetPath = 'C:\Windows\System32\cmd.exe'
+    $shortcut.Arguments = '/c "' + (Join-Path -Path $root -ChildPath 'run.bat') + '"'
+    $shortcut.WorkingDirectory = $root
+    $shortcut.WindowStyle = 1
+    $shortcut.Description = 'Tecno--J.A.R.V.I.S'
+    $shortcut.IconLocation = 'C:\Windows\System32\shell32.dll,13'
+    $shortcut.Save()
+}}
+"""
+    subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        cwd=ROOT,
+        check=False,
+    )
+
+
 def print_next_steps() -> None:
     py = venv_python()
     log("Instalacion completa.")
@@ -201,6 +236,7 @@ def print_next_steps() -> None:
     print(f"  1. Edita {API_FILE} y pega tu gemini_api_key.")
     if platform.system() == "Windows":
         print("  2. Ejecuta: run.bat")
+        print("  Tambien podes abrirlo desde el acceso directo del Escritorio o Menu Inicio.")
     else:
         print("  2. Ejecuta: sh run.sh")
     print(f"  Alternativa manual: {py} main.py")
@@ -220,6 +256,7 @@ def main() -> None:
     install_playwright(args.check)
     ensure_config(args.check)
     write_launchers(args.check)
+    create_windows_shortcuts(args.check)
     print_next_steps()
 
 

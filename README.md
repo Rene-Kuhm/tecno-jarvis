@@ -49,6 +49,7 @@ El instalador automatico:
 - Instala navegadores de Playwright.
 - Crea `config/api_keys.json` si falta.
 - Genera o actualiza `run.bat` y `run.sh`.
+- En Windows crea accesos directos en Escritorio y Menu Inicio.
 - En Linux/macOS intenta instalar dependencias del sistema conocidas cuando hay gestor compatible.
 
 ## Configuracion
@@ -71,6 +72,8 @@ Windows:
 ```bat
 run.bat
 ```
+
+El instalador tambien crea accesos directos para abrir Tecno--J.A.R.V.I.S desde el Escritorio o el Menu Inicio.
 
 Linux/macOS:
 

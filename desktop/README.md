@@ -16,7 +16,7 @@ Linux/macOS:
 sh install.sh
 ```
 
-El instalador crea `.venv`, instala dependencias Python, instala navegadores de Playwright, crea una plantilla `config/api_keys.json` si falta y genera `run.bat` / `run.sh`.
+El instalador crea `.venv`, instala dependencias Python, instala navegadores de Playwright, crea una plantilla `config/api_keys.json` si falta, genera `run.bat` / `run.sh` y en Windows crea accesos directos en Escritorio y Menu Inicio.
 
 ## Ejecutar
 
