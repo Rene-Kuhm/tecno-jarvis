@@ -333,6 +333,7 @@ class HudCanvas(QWidget):
         self._particles: list[list[float]] = []
         self._hud_text_angle = 0.0
         self._scan_line_y = 0.0
+        self._pulse = 0.0
         self._face_px: QPixmap | None = None
         self._load_face(face_path)
 
@@ -426,6 +427,7 @@ class HudCanvas(QWidget):
 
         self._hud_text_angle = (self._hud_text_angle + 0.3) % 360
         self._scan_line_y = (self._scan_line_y + 1.5) % self.height() if self.height() > 0 else 0
+        self._pulse = (self._pulse + 0.04) % 6.2832
 
         self.update()
 
@@ -461,6 +463,17 @@ class HudCanvas(QWidget):
                 self._draw_hex(p, cx_hex, y_base, hex_w / 2 - 1)
 
         r_face = fw * 0.31
+
+        # pulsing radial glow
+        pulse_val = 0.5 + 0.5 * math.sin(self._pulse)
+        glow_r = r_face * (1.1 + pulse_val * 0.15)
+        gradient = QRadialGradient(QPointF(cx, cy), glow_r)
+        gradient.setColorAt(0.0, QColor(0, 212, 255, 50 + int(pulse_val * 30)))
+        gradient.setColorAt(0.5, QColor(0, 120, 180, 20))
+        gradient.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(gradient))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(cx, cy), glow_r, glow_r)
 
         # halo glow with gold gradient on outer rings
         for i in range(10):
@@ -508,12 +521,24 @@ class HudCanvas(QWidget):
         p.setPen(QPen(qcol(C.ACC, sa // 2), 1.5))
         p.drawArc(srect, int(self._scan2 * 16), int(ex * 16))
 
-        # tick marks
-        t_out, t_in = fw * 0.497, fw * 0.474
-        p.setPen(QPen(qcol(C.PRI, 140), 1))
-        for deg in range(0, 360, 10):
+        # tick marks — 120 fine marks
+        t_out, t_in = fw * 0.497, fw * 0.469
+        for deg in range(0, 360, 3):
             rad = math.radians(deg)
-            inn = t_in if deg % 30 == 0 else t_in + 6
+            mod = deg % 30
+            if mod == 0:
+                inn = t_in
+                alpha = 180
+                pen_w = 1.8
+            elif mod == 15:
+                inn = t_in + 5
+                alpha = 110
+                pen_w = 1.2
+            else:
+                inn = t_in + 9
+                alpha = 70
+                pen_w = 0.7
+            p.setPen(QPen(qcol(C.PRI, alpha), pen_w))
             p.drawLine(
                 QPointF(cx + t_out * math.cos(rad), cy - t_out * math.sin(rad)),
                 QPointF(cx + inn  * math.cos(rad), cy - inn  * math.sin(rad)),
@@ -652,19 +677,19 @@ class MetricBar(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W, H = self.width(), self.height()
 
-        p.setBrush(QBrush(qcol(C.PANEL2)))
-        p.setPen(QPen(qcol(C.BORDER_A), 1))
-        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 4, 4)
+        p.setBrush(QBrush(qcol(C.PANEL, 200)))
+        p.setPen(QPen(qcol(C.BORDER, 120), 1))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 5, 5)
 
-        bar_h   = 4
-        bar_y   = H - bar_h - 5
-        bar_w   = W - 12
-        bar_x   = 6
+        bar_h   = 5
+        bar_y   = H - bar_h - 6
+        bar_w   = W - 14
+        bar_x   = 7
         fill_w  = int(bar_w * self._value / 100)
 
         p.setBrush(QBrush(qcol(C.BAR_BG)))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(QRectF(bar_x, bar_y, bar_w, bar_h), 2, 2)
+        p.drawRoundedRect(QRectF(bar_x, bar_y, bar_w, bar_h), 2.5, 2.5)
 
         if self._value > 85:
             bar_col = qcol(C.RED)
@@ -694,22 +719,33 @@ class LogWidget(QTextEdit):
         self.setFont(QFont("Courier New", 9))
         self.setStyleSheet(f"""
             QTextEdit {{
-                background: {C.PANEL};
+                background: rgba(1, 13, 20, 180);
                 color: {C.TEXT};
-                border: 1px solid {C.BORDER};
-                border-radius: 4px;
-                padding: 6px;
+                border: 1px solid rgba(13, 51, 71, 180);
+                border-radius: 6px;
+                padding: 8px;
                 selection-background-color: {C.PRI_GHO};
             }}
             QScrollBar:vertical {{
                 background: {C.BG};
-                width: 8px;
+                width: 6px;
                 border: none;
+                border-radius: 3px;
+                margin: 2px;
             }}
             QScrollBar::handle:vertical {{
-                background: {C.BORDER_B};
-                border-radius: 4px;
+                background: rgba(26, 92, 122, 180);
+                border-radius: 3px;
                 min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: rgba(0, 212, 255, 120);
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
             }}
         """)
         self._queue: list[str] = []
@@ -896,13 +932,13 @@ class _DropCanvas(QWidget):
         pad  = 6
         rect = QRectF(pad, pad, W - pad * 2, H - pad * 2)
 
-        bg_col = qcol("#001a24" if z._drag_over else ("#001218" if z._hovering else C.PANEL))
+        bg_col = qcol("rgba(0, 26, 36, 200)" if z._drag_over else ("rgba(0, 18, 24, 180)" if z._hovering else f"rgba(1, 13, 20, 160)"))
         p.setBrush(QBrush(bg_col)); p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(rect, 6, 6)
 
-        if z._current_file:   border_col = qcol(C.GREEN, 200)
+        if z._current_file:   border_col = qcol(C.GREEN, 220)
         elif z._drag_over:    border_col = qcol(C.PRI, 230)
-        elif z._hovering:     border_col = qcol(C.BORDER_B, 200)
+        elif z._hovering:     border_col = qcol(C.BORDER_GLOW, 200)
         else:                 border_col = qcol(C.BORDER, 160)
 
         pen = QPen(border_col, 1.5, Qt.PenStyle.DashLine)
@@ -1091,8 +1127,8 @@ class SetupOverlay(QWidget):
         self.setStyleSheet(f"""
             SetupOverlay {{
                 background: rgba(0, 6, 10, 245);
-                border: 1px solid {C.BORDER_B};
-                border-radius: 6px;
+                border: 1px solid rgba(26, 106, 138, 200);
+                border-radius: 8px;
             }}
         """)
 
@@ -1131,10 +1167,10 @@ class SetupOverlay(QWidget):
         self._key_input.setFixedHeight(32)
         self._key_input.setStyleSheet(f"""
             QLineEdit {{
-                background: #000d12; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px;
+                background: rgba(0, 13, 18, 220); color: {C.TEXT};
+                border: 1px solid rgba(13, 51, 71, 180); border-radius: 4px; padding: 4px 10px;
             }}
-            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
+            QLineEdit:focus {{ border: 1px solid rgba(0, 212, 255, 160); }}
         """)
         layout.addWidget(self._key_input)
         layout.addSpacing(12)
@@ -1169,11 +1205,11 @@ class SetupOverlay(QWidget):
         init_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         init_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {C.PRI};
-                border: 1px solid {C.PRI_DIM}; border-radius: 3px;
+                background: rgba(0, 31, 46, 180); color: {C.PRI};
+                border: 1px solid rgba(0, 122, 153, 160); border-radius: 5px;
             }}
             QPushButton:hover {{
-                background: {C.PRI_GHO}; border: 1px solid {C.PRI};
+                background: rgba(0, 212, 255, 25); border: 1px solid {C.PRI};
             }}
         """)
         init_btn.clicked.connect(self._submit)
@@ -1194,10 +1230,10 @@ class SetupOverlay(QWidget):
             else:
                 btn.setStyleSheet(f"""
                     QPushButton {{
-                        background: #000d12; color: {C.TEXT_DIM};
-                        border: 1px solid {C.BORDER}; border-radius: 3px;
+                        background: rgba(0, 13, 18, 200); color: {C.TEXT_DIM};
+                        border: 1px solid rgba(13, 51, 71, 160); border-radius: 4px;
                     }}
-                    QPushButton:hover {{ color: {C.TEXT}; border: 1px solid {C.BORDER_B}; }}
+                    QPushButton:hover {{ color: {C.TEXT}; border: 1px solid rgba(26, 106, 138, 200); }}
                 """)
 
     def _submit(self):
@@ -1540,11 +1576,11 @@ class MainWindow(QMainWindow):
         fs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         fs_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 3px;
+                background: rgba(0, 13, 18, 180); color: {C.TEXT_MED};
+                border: 1px solid rgba(13, 51, 71, 160); border-radius: 4px;
             }}
             QPushButton:hover {{
-                color: {C.PRI}; border: 1px solid {C.BORDER_B};
+                color: {C.PRI}; border: 1px solid rgba(26, 106, 138, 200);
             }}
         """)
         fs_btn.clicked.connect(self._toggle_fullscreen)
@@ -1555,7 +1591,7 @@ class MainWindow(QMainWindow):
     def _build_audio_diag_panel(self) -> QWidget:
         panel = QWidget()
         panel.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+            f"background: rgba(1, 21, 26, 170); border: 1px solid rgba(13, 51, 71, 180); border-radius: 6px;"
         )
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(6, 5, 6, 5)
@@ -1578,13 +1614,13 @@ class MainWindow(QMainWindow):
         self._mic_level_bar.setFixedHeight(10)
         self._mic_level_bar.setStyleSheet(f"""
             QProgressBar {{
-                background: {C.BAR_BG};
-                border: 1px solid {C.BORDER};
-                border-radius: 3px;
+                background: rgba(1, 21, 26, 200);
+                border: 1px solid rgba(13, 51, 71, 150);
+                border-radius: 4px;
             }}
             QProgressBar::chunk {{
-                background: {C.GREEN};
-                border-radius: 2px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {C.GREEN_D}, stop:1 {C.GREEN});
+                border-radius: 3px;
             }}
         """)
         lay.addWidget(self._mic_level_bar)
@@ -1618,11 +1654,15 @@ class MainWindow(QMainWindow):
             combo.setFixedHeight(24)
             combo.setStyleSheet(f"""
                 QComboBox {{
-                    background: #000d12; color: {C.TEXT};
-                    border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 6px;
+                    background: rgba(0, 13, 18, 220); color: {C.TEXT};
+                    border: 1px solid rgba(13, 51, 71, 180); border-radius: 4px; padding: 2px 8px;
                 }}
-                QComboBox:hover {{ border: 1px solid {C.BORDER_B}; }}
+                QComboBox:hover {{ border: 1px solid rgba(26, 106, 138, 200); }}
                 QComboBox::drop-down {{ border: none; width: 20px; }}
+                QComboBox QAbstractItemView {{
+                    background: {C.DARK}; color: {C.TEXT};
+                    border: 1px solid rgba(13, 51, 71, 200); selection-background-color: {C.PRI_GHO};
+                }}
             """)
 
         mic_lbl = QLabel("FUENTE MIC")
@@ -1647,10 +1687,10 @@ class MainWindow(QMainWindow):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: transparent; color: {C.TEXT_MED};
-                    border: 1px solid {C.BORDER}; border-radius: 3px; padding: 0 6px;
+                    background: rgba(0, 13, 18, 200); color: {C.TEXT_MED};
+                    border: 1px solid rgba(13, 51, 71, 160); border-radius: 4px; padding: 0 8px;
                 }}
-                QPushButton:hover {{ color: {C.PRI}; border: 1px solid {C.BORDER_B}; }}
+                QPushButton:hover {{ color: {C.PRI}; border: 1px solid rgba(26, 106, 138, 200); background: rgba(0, 31, 46, 150); }}
             """)
         refresh_btn.clicked.connect(self._refresh_audio_devices)
         default_btn.clicked.connect(self._use_default_audio_devices)
@@ -1667,7 +1707,7 @@ class MainWindow(QMainWindow):
     def _build_runtime_panel(self) -> QWidget:
         panel = QWidget()
         panel.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+            f"background: rgba(1, 21, 26, 170); border: 1px solid rgba(13, 51, 71, 180); border-radius: 6px;"
         )
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(6, 5, 6, 5)
@@ -1798,10 +1838,10 @@ class MainWindow(QMainWindow):
         self._input.setFixedHeight(30)
         self._input.setStyleSheet(f"""
             QLineEdit {{
-                background: #000d14; color: {C.WHITE};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 3px 7px;
+                background: rgba(0, 13, 20, 220); color: {C.WHITE};
+                border: 1px solid rgba(13, 51, 71, 180); border-radius: 5px; padding: 3px 10px;
             }}
-            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
+            QLineEdit:focus {{ border: 1px solid rgba(0, 212, 255, 160); }}
         """)
         self._input.returnPressed.connect(self._send)
         row.addWidget(self._input)
@@ -1812,10 +1852,10 @@ class MainWindow(QMainWindow):
         send.setCursor(Qt.CursorShape.PointingHandCursor)
         send.setStyleSheet(f"""
             QPushButton {{
-                background: {C.PANEL}; color: {C.PRI};
-                border: 1px solid {C.PRI_DIM}; border-radius: 3px;
+                background: rgba(0, 31, 46, 180); color: {C.PRI};
+                border: 1px solid rgba(0, 122, 153, 160); border-radius: 5px;
             }}
-            QPushButton:hover {{ background: {C.PRI_GHO}; border: 1px solid {C.PRI}; }}
+            QPushButton:hover {{ background: rgba(0, 212, 255, 30); border: 1px solid {C.PRI}; }}
         """)
         send.clicked.connect(self._send)
         row.addWidget(send)
@@ -1872,18 +1912,18 @@ class MainWindow(QMainWindow):
             self._mute_btn.setText("\U0001F507  MICROFONO SILENCIADO")
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #140006; color: {C.MUTED_C};
-                    border: 1px solid {C.MUTED_C}; border-radius: 3px;
+                    background: rgba(20, 0, 6, 200); color: {C.MUTED_C};
+                    border: 1px solid rgba(255, 51, 102, 140); border-radius: 4px;
                 }}
             """)
         else:
             self._mute_btn.setText("\U0001F399  MICROFONO ACTIVO")
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #00140a; color: {C.GREEN};
-                    border: 1px solid {C.GREEN}; border-radius: 3px;
+                    background: rgba(0, 20, 10, 200); color: {C.GREEN};
+                    border: 1px solid rgba(0, 255, 136, 140); border-radius: 4px;
                 }}
-                QPushButton:hover {{ background: #001f10; }}
+                QPushButton:hover {{ background: rgba(0, 31, 16, 200); }}
             """)
 
     def _send(self):
