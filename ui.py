@@ -116,6 +116,20 @@ class C:
 def qcol(h: str, a: int = 255) -> QColor:
     c = QColor(h); c.setAlpha(a); return c
 
+def _paint_glow_text(p: QPainter, text: str, rect: QRectF, font: QFont, color: QColor, glow_color: QColor, glow_passes: int = 3):
+    p.setFont(font)
+    for i in range(glow_passes, 0, -1):
+        alpha = int(color.alpha() * (0.2 / i))
+        p.setPen(QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), alpha), i * 2 + 1))
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+    p.setPen(QPen(color, 1))
+    p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+def _iron_font(size: int, bold: bool = False, letter_spacing: float = -0.5) -> QFont:
+    f = QFont("Courier New", size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
+    f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, letter_spacing)
+    return f
+
 class _SysMetrics:
     def __init__(self):
         self.cpu  = 0.0
@@ -334,6 +348,20 @@ class HudCanvas(QWidget):
         except Exception:
             self._face_px = None
 
+    @staticmethod
+    def _draw_hex(p: QPainter, cx: float, cy: float, r: float):
+        path = QPainterPath()
+        for i in range(6):
+            angle = math.radians(60 * i - 30)
+            x = cx + r * math.cos(angle)
+            y = cy + r * math.sin(angle)
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+        path.closeSubpath()
+        p.drawPath(path)
+
     def _step(self):
         self._tick += 1
         now = time.time()
@@ -396,11 +424,17 @@ class HudCanvas(QWidget):
         cx, cy = W / 2, H / 2
         fw = min(W, H)
 
-        # grid dots
+        # hexagonal grid
         p.setPen(QPen(qcol(C.PRI_GHO), 1))
-        for x in range(0, W, 48):
-            for y in range(0, H, 48):
-                p.drawPoint(x, y)
+        hex_w, hex_h = 28.0, 24.0
+        col_count = int(W / hex_w) + 2
+        row_count = int(H / (hex_h * 0.75)) + 2
+        for row in range(row_count):
+            y_base = row * hex_h * 0.75
+            offset = (hex_w / 2) if row % 2 == 1 else 0
+            for col in range(col_count):
+                cx_hex = col * hex_w + offset
+                self._draw_hex(p, cx_hex, y_base, hex_w / 2 - 1)
 
         r_face = fw * 0.31
 
@@ -495,7 +529,7 @@ class HudCanvas(QWidget):
                 p.setPen(Qt.PenStyle.NoPen)
                 p.drawEllipse(QRectF(cx - r2, cy - r2, r2 * 2, r2 * 2))
             p.setPen(QPen(qcol(C.PRI, min(255, int(self._halo * 2))), 1))
-            p.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
+            p.setFont(_iron_font(13, bold=True))
             p.drawText(QRectF(cx - 80, cy - 14, 160, 28),
                        Qt.AlignmentFlag.AlignCenter, "J.A.R.V.I.S")
 
@@ -509,24 +543,27 @@ class HudCanvas(QWidget):
         # status text
         sy = cy + fw * 0.40
         if self.muted:
-            txt, col = "⊘  MUTED",     qcol(C.MUTED_C)
+            txt, col = "\u2298  SILENCIADO",     qcol(C.MUTED_C)
         elif self.speaking:
-            txt, col = "●  SPEAKING",  qcol(C.ACC)
+            txt, col = "\u25CF  HABLANDO",  qcol(C.ACC)
         elif self.state == "THINKING":
-            sym = "◈" if self._blink else "◇"
-            txt, col = f"{sym}  THINKING",   qcol(C.ACC2)
+            sym = "\u25C8" if self._blink else "\u25C7"
+            txt, col = f"{sym}  PENSANDO",   qcol(C.ACC2)
         elif self.state == "PROCESSING":
-            sym = "▷" if self._blink else "▶"
-            txt, col = f"{sym}  PROCESSING", qcol(C.ACC2)
+            sym = "\u25B7" if self._blink else "\u25B6"
+            txt, col = f"{sym}  PROCESANDO", qcol(C.ACC2)
         elif self.state == "LISTENING":
-            sym = "●" if self._blink else "○"
-            txt, col = f"{sym}  LISTENING",  qcol(C.GREEN)
+            sym = "\u25CF" if self._blink else "\u25CB"
+            txt, col = f"{sym}  ESCUCHANDO",  qcol(C.GREEN)
+        elif self.state == "INITIALISING":
+            sym = "\u25CF" if self._blink else "\u25CB"
+            txt, col = f"{sym}  INICIANDO", qcol(C.PRI)
         else:
-            sym = "●" if self._blink else "○"
+            sym = "\u25CF" if self._blink else "\u25CB"
             txt, col = f"{sym}  {self.state}", qcol(C.PRI)
 
         p.setPen(QPen(col, 1))
-        p.setFont(QFont("Courier New", 11, QFont.Weight.Bold))
+        p.setFont(_iron_font(10, bold=True))
         p.drawText(QRectF(0, sy, W, 26), Qt.AlignmentFlag.AlignCenter, txt)
 
         # waveform
@@ -777,7 +814,7 @@ class FileDropZone(QWidget):
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select a file for JARVIS", str(Path.home()),
+            self, "Seleccionar archivo para JARVIS", str(Path.home()),
             "All Files (*.*);;"
             "Images (*.jpg *.jpeg *.png *.gif *.webp *.bmp *.svg);;"
             "Documents (*.pdf *.docx *.txt *.md *.pptx);;"
@@ -838,11 +875,11 @@ class _DropCanvas(QWidget):
         p.setFont(QFont("Courier New", 8))
         p.setPen(QPen(qcol(C.PRI_DIM if not hover else C.TEXT), 1))
         p.drawText(QRectF(0, cy + 8, W, 16), Qt.AlignmentFlag.AlignCenter,
-                   "Drop file here  or  Click to Browse")
+                   "Soltar archivo aqui  o  Click para buscar")
         p.setFont(QFont("Courier New", 7))
         p.setPen(QPen(qcol("#1a4a5a"), 1))
         p.drawText(QRectF(0, cy + 24, W, 14), Qt.AlignmentFlag.AlignCenter,
-                   "Images · Video · Audio · PDF · Docs · Code · Data")
+                   "Imagenes \u00B7 Video \u00B7 Audio \u00B7 PDF \u00B7 Docs \u00B7 Codigo \u00B7 Datos")
 
     def _paint_drag_over(self, p, W, H):
         cx, cy = W / 2, H / 2
@@ -851,7 +888,7 @@ class _DropCanvas(QWidget):
         p.drawText(QRectF(0, cy - 24, W, 32), Qt.AlignmentFlag.AlignCenter, "⬇")
         p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.PRI), 1))
-        p.drawText(QRectF(0, cy + 12, W, 16), Qt.AlignmentFlag.AlignCenter, "Release to load")
+        p.drawText(QRectF(0, cy + 12, W, 16), Qt.AlignmentFlag.AlignCenter, "Soltar para cargar")
 
     def _paint_file(self, p, W, H):
         path = Path(self._z._current_file)
@@ -899,7 +936,100 @@ class _DropCanvas(QWidget):
             z.mousePressEvent(e)
 
 
-class SetupOverlay(QWidget):
+class BootOverlay(QWidget):
+    done = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"background: #00060a; border: none;")
+        self._lines: list[str] = []
+        self._visible_lines: list[str] = []
+        self._line_index = 0
+        self._char_index = 0
+        self._phase = "typing"
+        self._tick = 0
+        self._alpha = 255
+
+        sequence = [
+            ("INICIALIZANDO NUCLEO J.A.R.V.I.S...", 30),
+            ("CARGANDO PROTOCOLOS MARK XXXIX...", 25),
+            ("CONECTANDO SISTEMAS DE DEFENSA...", 20),
+            ("VERIFICANDO FIRMWARE STARK INDUSTRIES...", 18),
+            ("J.A.R.V.I.S EN LINEA, SE\u00d1OR.", 0),
+        ]
+
+        self._lines = sequence
+        self._tmr = QTimer(self)
+        self._tmr.timeout.connect(self._step)
+        self._tmr.start(40)
+
+    def _step(self):
+        self._tick += 1
+
+        if self._phase == "typing":
+            if self._line_index < len(self._lines):
+                line_text, _ = self._lines[self._line_index]
+                self._char_index += 1
+                current = line_text[:self._char_index]
+                if len(self._visible_lines) <= self._line_index:
+                    self._visible_lines.append("")
+                self._visible_lines[self._line_index] = current
+                if self._char_index >= len(line_text):
+                    self._line_index += 1
+                    self._char_index = 0
+                    if self._line_index >= len(self._lines):
+                        self._phase = "hold"
+                        self._tick = 0
+            self.update()
+            return
+
+        if self._phase == "hold":
+            if self._tick > 60:
+                self._phase = "fade"
+                self._tick = 0
+            self.update()
+            return
+
+        if self._phase == "fade":
+            self._alpha = max(0, self._alpha - 8)
+            self.update()
+            if self._alpha <= 0:
+                self._tmr.stop()
+                self.done.emit()
+            return
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        cx, cy = W / 2, H / 2
+
+        p.fillRect(self.rect(), QColor(0, 6, 10, self._alpha))
+
+        for i, line in enumerate(self._visible_lines):
+            _, delay = self._lines[i] if i < len(self._lines) else (line, 0)
+            y = cy - 60 + i * 32
+            alpha = min(255, self._alpha if self._phase == "fade" else 255 - i * 20)
+            col = qcol(C.PRI if i < len(self._visible_lines) - 1 else C.GREEN, alpha)
+            p.setFont(_iron_font(10, bold=(i == len(self._visible_lines) - 1)))
+            p.setPen(QPen(col, 1))
+            p.drawText(QRectF(0, y, W, 28), Qt.AlignmentFlag.AlignCenter, line)
+
+        if self._phase == "typing" and self._tick % 20 < 10:
+            p.setPen(QPen(qcol(C.PRI, 180), 1))
+            p.drawRect(QRectF(cx + 120, cy - 58, 8, 16))
+
+
+class BootSequence:
+    def __init__(self, parent_widget: QWidget, on_done):
+        self._overlay = BootOverlay(parent_widget)
+        cw = parent_widget
+        self._overlay.setGeometry(0, 0, cw.width(), cw.height())
+        self._overlay.done.connect(on_done)
+        self._overlay.done.connect(self._overlay.deleteLater)
+        self._overlay.show()
+        self._overlay.raise_()
     done = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
@@ -931,16 +1061,16 @@ class SetupOverlay(QWidget):
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
-        layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 13, True))
-        layout.addWidget(_lbl("Configure J.A.R.V.I.S. before first boot.", 9, color=C.PRI_DIM))
+        layout.addWidget(_lbl("\u25C8  INICIALIZACION REQUERIDA", 13, True))
+        layout.addWidget(_lbl("Configura J.A.R.V.I.S. antes del primer arranque.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("GEMINI API KEY", 8, color=C.TEXT_DIM,
-                               align=Qt.AlignmentFlag.AlignLeft))
+        layout.addWidget(_lbl("CLAVE API GEMINI", 8, color=C.TEXT_DIM,
+                                align=Qt.AlignmentFlag.AlignLeft))
         self._key_input = QLineEdit()
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._key_input.setPlaceholderText("AIza…")
@@ -960,11 +1090,11 @@ class SetupOverlay(QWidget):
         sep2.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep2)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("OPERATING SYSTEM", 8, color=C.TEXT_DIM,
-                               align=Qt.AlignmentFlag.AlignLeft))
+        layout.addWidget(_lbl("SISTEMA OPERATIVO", 8, color=C.TEXT_DIM,
+                                align=Qt.AlignmentFlag.AlignLeft))
         det_name = {"windows": "Windows", "mac": "macOS", "linux": "Linux"}[detected]
-        layout.addWidget(_lbl(f"Auto-detected: {det_name}", 8, color=C.ACC2,
-                               align=Qt.AlignmentFlag.AlignLeft))
+        layout.addWidget(_lbl(f"Detectado: {det_name}", 8, color=C.ACC2,
+                                align=Qt.AlignmentFlag.AlignLeft))
 
         os_row = QHBoxLayout(); os_row.setSpacing(6)
         self._os_btns: dict[str, QPushButton] = {}
@@ -980,7 +1110,7 @@ class SetupOverlay(QWidget):
         self._sel(detected)
         layout.addSpacing(12)
 
-        init_btn = QPushButton("▸  INITIALISE SYSTEMS")
+        init_btn = QPushButton("\u25B8  INICIAR SISTEMAS")
         init_btn.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
         init_btn.setFixedHeight(36)
         init_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1036,7 +1166,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, face_path: str):
         super().__init__()
-        self.setWindowTitle("J.A.R.V.I.S — MARK XXXIX")
+        self.setWindowTitle("J.A.R.V.I.S \u2014 MARK XXXIX")
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
@@ -1093,8 +1223,11 @@ class MainWindow(QMainWindow):
         self._runtime_sig.connect(self._apply_runtime_status)
 
         self._overlay: SetupOverlay | None = None
+        self._boot_overlay = None
         self._ready = self._check_config()
-        if not self._ready:
+        if self._ready:
+            QTimer.singleShot(300, self._show_boot)
+        else:
             self._show_setup()
 
         sc_mute = QShortcut(QKeySequence("F4"), self)
@@ -1192,7 +1325,7 @@ class MainWindow(QMainWindow):
         title.setFont(QFont("Courier New", 17, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         mid.addWidget(title)
-        sub = QLabel("Just A Rather Very Intelligent System")
+        sub = QLabel("Simplemente Un Sistema Bastante Inteligente")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setFont(QFont("Courier New", 7))
         sub.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
@@ -1226,7 +1359,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(8, 10, 8, 10)
         lay.setSpacing(6)
 
-        hdr = QLabel("◈ SYS MONITOR")
+        hdr = QLabel("\u25C8 MONITOR SYS")
         hdr.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent; "
                           f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;")
@@ -1273,9 +1406,9 @@ class MainWindow(QMainWindow):
         lay.addStretch()
 
         for txt, col in [
-            ("AI CORE\nACTIVE",     C.GREEN),
-            ("SEC\nCLEARED",        C.PRI),
-            ("PROTOCOL\nXXXVIII",   C.TEXT_DIM),
+            ("NUCLEO IA\nACTIVO",     C.GREEN),
+            ("SEGURIDAD\nVERIFICADA",        C.PRI),
+            ("PROTOCOLO\nXXXVIII",   C.TEXT_DIM),
         ]:
             lbl = QLabel(txt)
             lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
@@ -1301,7 +1434,7 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
             return l
 
-        lay.addWidget(_sec("ACTIVITY LOG"))
+        lay.addWidget(_sec("REGISTRO DE ACTIVIDAD"))
         self._log = LogWidget()
         lay.addWidget(self._log, stretch=1)
 
@@ -1309,12 +1442,12 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
-        lay.addWidget(_sec("FILE UPLOAD"))
+        lay.addWidget(_sec("SUBIR ARCHIVO"))
         self._drop_zone = FileDropZone()
         self._drop_zone.file_selected.connect(self._on_file_selected)
         lay.addWidget(self._drop_zone)
 
-        self._file_hint = QLabel("No file loaded — drop or click above to upload")
+        self._file_hint = QLabel("Sin archivo \u2014 solta o hace click arriba para subir")
         self._file_hint.setFont(QFont("Courier New", 7))
         self._file_hint.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         self._file_hint.setWordWrap(True)
@@ -1324,23 +1457,23 @@ class MainWindow(QMainWindow):
         sep2.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep2)
 
-        lay.addWidget(_sec("AUDIO DIAGNOSTICS"))
+        lay.addWidget(_sec("DIAGNOSTICO DE AUDIO"))
         lay.addWidget(self._build_audio_diag_panel())
 
         sep3 = QFrame(); sep3.setFrameShape(QFrame.Shape.HLine)
         sep3.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep3)
 
-        lay.addWidget(_sec("REALTIME STATUS"))
+        lay.addWidget(_sec("ESTADO EN TIEMPO REAL"))
         lay.addWidget(self._build_runtime_panel())
 
         sep4 = QFrame(); sep4.setFrameShape(QFrame.Shape.HLine)
         sep4.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep4)
-        lay.addWidget(_sec("COMMAND INPUT"))
+        lay.addWidget(_sec("COMANDOS"))
         lay.addLayout(self._build_input_row())
 
-        self._mute_btn = QPushButton("🎙  MICROPHONE ACTIVE")
+        self._mute_btn = QPushButton("\U0001F399  MICROFONO ACTIVO")
         self._mute_btn.setFixedHeight(30)
         self._mute_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1348,7 +1481,7 @@ class MainWindow(QMainWindow):
         self._style_mute_btn()
         lay.addWidget(self._mute_btn)
 
-        fs_btn = QPushButton("⛶  FULLSCREEN  [F11]")
+        fs_btn = QPushButton("\u26F6  PANTALLA COMPLETA  [F11]")
         fs_btn.setFixedHeight(26)
         fs_btn.setFont(QFont("Courier New", 7))
         fs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1375,12 +1508,12 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(6, 5, 6, 5)
         lay.setSpacing(4)
 
-        self._mic_status_lbl = QLabel("MIC  OFFLINE")
+        self._mic_status_lbl = QLabel("MIC  DESCONECTADO")
         self._mic_status_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._mic_status_lbl.setStyleSheet(f"color: {C.RED}; background: transparent; border: none;")
         lay.addWidget(self._mic_status_lbl)
 
-        self._mic_level_lbl = QLabel("LVL  0%")
+        self._mic_level_lbl = QLabel("NVL  0%")
         self._mic_level_lbl.setFont(QFont("Courier New", 8))
         self._mic_level_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
         lay.addWidget(self._mic_level_lbl)
@@ -1403,12 +1536,12 @@ class MainWindow(QMainWindow):
         """)
         lay.addWidget(self._mic_level_bar)
 
-        self._mic_last_input_lbl = QLabel("LAST  no signal yet")
+        self._mic_last_input_lbl = QLabel("ULTIMA  sin senal")
         self._mic_last_input_lbl.setFont(QFont("Courier New", 7))
         self._mic_last_input_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
         lay.addWidget(self._mic_last_input_lbl)
 
-        self._mic_detail_lbl = QLabel("Waiting for microphone stream...")
+        self._mic_detail_lbl = QLabel("Esperando flujo de microfono...")
         self._mic_detail_lbl.setFont(QFont("Courier New", 7))
         self._mic_detail_lbl.setWordWrap(True)
         self._mic_detail_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
@@ -1439,13 +1572,13 @@ class MainWindow(QMainWindow):
                 QComboBox::drop-down {{ border: none; width: 20px; }}
             """)
 
-        mic_lbl = QLabel("MIC SOURCE")
+        mic_lbl = QLabel("FUENTE MIC")
         mic_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         mic_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
         lay.addWidget(mic_lbl)
         lay.addWidget(self._mic_select)
 
-        speaker_lbl = QLabel("SPEAKER OUT")
+        speaker_lbl = QLabel("SALIDA ALTAVOZ")
         speaker_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         speaker_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
         lay.addWidget(speaker_lbl)
@@ -1453,8 +1586,8 @@ class MainWindow(QMainWindow):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
-        refresh_btn = QPushButton("REFRESH")
-        default_btn = QPushButton("USE DEFAULT")
+        refresh_btn = QPushButton("ACTUALIZAR")
+        default_btn = QPushButton("POR DEFECTO")
         for btn in [refresh_btn, default_btn]:
             btn.setFixedHeight(22)
             btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
@@ -1487,22 +1620,22 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(6, 5, 6, 5)
         lay.setSpacing(3)
 
-        self._runtime_session_lbl = QLabel("SESSION  OFFLINE")
+        self._runtime_session_lbl = QLabel("SESION  DESCONECTADO")
         self._runtime_session_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._runtime_session_lbl.setStyleSheet(f"color: {C.RED}; background: transparent; border: none;")
         lay.addWidget(self._runtime_session_lbl)
 
-        self._runtime_stream_lbl = QLabel("STREAM   IDLE")
+        self._runtime_stream_lbl = QLabel("FLUJO   INACTIVO")
         self._runtime_stream_lbl.setFont(QFont("Courier New", 8))
         self._runtime_stream_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
         lay.addWidget(self._runtime_stream_lbl)
 
-        self._runtime_last_tx_lbl = QLabel("TX  no traffic")
+        self._runtime_last_tx_lbl = QLabel("TX  sin trafico")
         self._runtime_last_tx_lbl.setFont(QFont("Courier New", 7))
         self._runtime_last_tx_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
         lay.addWidget(self._runtime_last_tx_lbl)
 
-        self._runtime_last_rx_lbl = QLabel("RX  no traffic")
+        self._runtime_last_rx_lbl = QLabel("RX  sin trafico")
         self._runtime_last_rx_lbl.setFont(QFont("Courier New", 7))
         self._runtime_last_rx_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
         lay.addWidget(self._runtime_last_rx_lbl)
@@ -1517,7 +1650,7 @@ class MainWindow(QMainWindow):
         self._runtime_queue_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
         lay.addWidget(self._runtime_queue_lbl)
 
-        self._runtime_detail_lbl = QLabel("Waiting for live session...")
+        self._runtime_detail_lbl = QLabel("Esperando sesion en vivo...")
         self._runtime_detail_lbl.setFont(QFont("Courier New", 7))
         self._runtime_detail_lbl.setWordWrap(True)
         self._runtime_detail_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
@@ -1552,9 +1685,9 @@ class MainWindow(QMainWindow):
         self._speaker_select.blockSignals(False)
 
         if selected_input is not None and self._mic_select.currentIndex() == 0:
-            self._log.append_log("SYS: Saved microphone device is unavailable. Falling back to system default.")
+            self._log.append_log("SYS: Microfono guardado no disponible. Usando predeterminado.")
         if selected_output is not None and self._speaker_select.currentIndex() == 0:
-            self._log.append_log("SYS: Saved speaker device is unavailable. Falling back to system default.")
+            self._log.append_log("SYS: Altavoz guardado no disponible. Usando predeterminado.")
 
     @staticmethod
     def _set_combo_to_device(combo: QComboBox, device_value):
@@ -1580,10 +1713,10 @@ class MainWindow(QMainWindow):
         device = self._mic_select.itemData(index)
         if device is None:
             _save_app_config(input_device=None)
-            self._log.append_log("SYS: Input device reset to system default.")
+            self._log.append_log("SYS: Dispositivo entrada vuelto al predeterminado.")
             return
         _save_app_config(input_device=int(device))
-        self._log.append_log("SYS: Input device saved. Next reconnect will use it.")
+        self._log.append_log("SYS: Dispositivo entrada guardado. Se usara en la proxima conexion.")
 
     def _save_selected_output_device(self, index: int):
         if index < 0:
@@ -1591,23 +1724,23 @@ class MainWindow(QMainWindow):
         device = self._speaker_select.itemData(index)
         if device is None:
             _save_app_config(output_device=None)
-            self._log.append_log("SYS: Output device reset to system default.")
+            self._log.append_log("SYS: Dispositivo salida vuelto al predeterminado.")
             return
         _save_app_config(output_device=int(device))
-        self._log.append_log("SYS: Output device saved. Next reconnect will use it.")
+        self._log.append_log("SYS: Dispositivo salida guardado. Se usara en la proxima conexion.")
 
     def _refresh_audio_devices(self):
         self._populate_audio_device_selectors()
-        self._log.append_log("SYS: Audio device list refreshed.")
+        self._log.append_log("SYS: Lista de dispositivos actualizada.")
 
     def _use_default_audio_devices(self):
         self._mic_select.setCurrentIndex(0)
         self._speaker_select.setCurrentIndex(0)
-        self._log.append_log("SYS: Audio devices reset to system defaults.")
+        self._log.append_log("SYS: Dispositivos vueltos a predeterminados.")
     def _build_input_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(5)
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Type a command or question…")
+        self._input.setPlaceholderText("Escribi un comando o pregunta...")
         self._input.setFont(QFont("Courier New", 9))
         self._input.setFixedHeight(30)
         self._input.setStyleSheet(f"""
@@ -1646,9 +1779,9 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
+        lay.addWidget(_fl("[F4] Silenciar  \u00B7  [F11] Pantalla Completa"))
         lay.addStretch()
-        lay.addWidget(_fl("FatihMakes Industries  ·  MARK XXXIX  ·  CLASSIFIED"))
+        lay.addWidget(_fl("FatihMakes Industries  \u00B7  MARK XXXIX  \u00B7  CLASIFICADO"))
         lay.addStretch()
         lay.addWidget(_fl("© FATIHMAKES", C.PRI_DIM))
         return w
@@ -1659,8 +1792,8 @@ class MainWindow(QMainWindow):
         cat  = _file_category(p)
         icon, _ = _FILE_ICONS.get(cat, _FILE_ICONS["unknown"])
         size = _fmt_size(p.stat().st_size)
-        self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell JARVIS what to do with it")
-        self._log.append_log(f"FILE: {p.name} ({size}) loaded")
+        self._file_hint.setText(f"{icon}  {p.name}  \u00B7  {size}  \u00B7  Decile a JARVIS que hacer con el")
+        self._log.append_log(f"FILE: {p.name} ({size}) cargado")
         if self.on_text_command:
             msg = (
                 f"[FILE_UPLOADED] path={path} | name={p.name} | "
@@ -1676,14 +1809,14 @@ class MainWindow(QMainWindow):
         self._style_mute_btn()
         if self._muted:
             self._apply_state("MUTED")
-            self._log.append_log("SYS: Microphone muted.")
+            self._log.append_log("SYS: Microfono silenciado.")
         else:
             self._apply_state("LISTENING")
-            self._log.append_log("SYS: Microphone active.")
+            self._log.append_log("SYS: Microfono activo.")
 
     def _style_mute_btn(self):
         if self._muted:
-            self._mute_btn.setText("🔇  MICROPHONE MUTED")
+            self._mute_btn.setText("\U0001F507  MICROFONO SILENCIADO")
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: #140006; color: {C.MUTED_C};
@@ -1691,7 +1824,7 @@ class MainWindow(QMainWindow):
                 }}
             """)
         else:
-            self._mute_btn.setText("🎙  MICROPHONE ACTIVE")
+            self._mute_btn.setText("\U0001F399  MICROFONO ACTIVO")
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: #00140a; color: {C.GREEN};
@@ -1719,12 +1852,12 @@ class MainWindow(QMainWindow):
         detail = str(payload.get("detail", "")).strip()
 
         status_map = {
-            "offline": ("MIC  OFFLINE", C.RED),
-            "ready": ("MIC  READY", C.ACC2),
-            "silent": ("MIC  SILENT", C.TEXT_MED),
-            "hearing": ("MIC  HEARING", C.GREEN),
-            "muted": ("MIC  MUTED", C.MUTED_C),
-            "paused": ("MIC  PAUSED", C.ACC),
+            "offline": ("MIC  DESCONECTADO", C.RED),
+            "ready": ("MIC  LISTO", C.ACC2),
+            "silent": ("MIC  SILENCIOSO", C.TEXT_MED),
+            "hearing": ("MIC  ESCUCHANDO", C.GREEN),
+            "muted": ("MIC  SILENCIADO", C.MUTED_C),
+            "paused": ("MIC  PAUSADO", C.ACC),
             "error": ("MIC  ERROR", C.RED),
         }
         text, color = status_map.get(status, (f"MIC  {status.upper()}", C.TEXT_MED))
@@ -1734,29 +1867,29 @@ class MainWindow(QMainWindow):
         )
 
         percent = int(round(level * 100))
-        self._mic_level_lbl.setText(f"LVL  {percent}%")
+        self._mic_level_lbl.setText(f"NVL  {percent}%")
         self._mic_level_bar.setValue(percent)
 
         if isinstance(age, (int, float)):
             if age < 1:
-                last_input = "LAST  just now"
+                last_input = "ULTIMA  ahora"
             else:
-                last_input = f"LAST  {age:.1f}s ago"
+                last_input = f"ULTIMA  {age:.1f}s"
         else:
-            last_input = "LAST  no signal yet"
+            last_input = "ULTIMA  sin senal"
         self._mic_last_input_lbl.setText(last_input)
 
         if detail:
             self._mic_detail_lbl.setText(detail)
         else:
             detail_map = {
-                "offline": "Voice session not ready yet.",
-                "ready": "Microphone stream open. Waiting for voice.",
-                "silent": "Mic is open, but no strong input is reaching Jarvis.",
-                "hearing": "Jarvis is receiving microphone signal right now.",
-                "muted": "Microphone capture is muted in the Jarvis UI.",
-                "paused": "Input capture is paused while Jarvis is speaking.",
-                "error": "Microphone stream failed. Check the console for details.",
+                "offline": "Sesion de voz no lista todavia.",
+                "ready": "Flujo de microfono abierto. Esperando voz.",
+                "silent": "Microfono abierto, sin senal fuerte entrante.",
+                "hearing": "Jarvis esta recibiendo senal de microfono.",
+                "muted": "Captura de microfono silenciada en la interfaz.",
+                "paused": "Captura pausada mientras Jarvis habla.",
+                "error": "Fallo en el flujo de microfono. Ver consola.",
             }
             self._mic_detail_lbl.setText(detail_map.get(status, ""))
 
@@ -1771,11 +1904,11 @@ class MainWindow(QMainWindow):
         detail = str(payload.get("detail", "")).strip()
 
         session_map = {
-            "offline": ("SESSION  OFFLINE", C.RED),
-            "connecting": ("SESSION  CONNECTING", C.ACC2),
-            "online": ("SESSION  ONLINE", C.GREEN),
-            "retrying": ("SESSION  RETRYING", C.ACC),
-            "error": ("SESSION  ERROR", C.RED),
+            "offline": ("SESION  DESCONECTADO", C.RED),
+            "connecting": ("SESION  CONECTANDO", C.ACC2),
+            "online": ("SESION  CONECTADO", C.GREEN),
+            "retrying": ("SESION  REINTENTANDO", C.ACC),
+            "error": ("SESION  ERROR", C.RED),
         }
         session_text, session_color = session_map.get(
             session, (f"SESSION  {session.upper()}", C.TEXT_MED)
@@ -1798,6 +1931,12 @@ class MainWindow(QMainWindow):
         d = _load_app_config()
         return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
 
+    def _show_boot(self):
+        def _after_boot():
+            self._apply_state("LISTENING")
+            self._log.append_log("SYS: J.A.R.V.I.S en linea, senor.")
+        self._boot_overlay = BootSequence(self.centralWidget(), _after_boot)
+
     def _show_setup(self):
         ov = SetupOverlay(self.centralWidget())
         cw = self.centralWidget()
@@ -1817,8 +1956,8 @@ class MainWindow(QMainWindow):
         if self._overlay:
             self._overlay.hide()
             self._overlay = None
-        self._apply_state("LISTENING")
-        self._log.append_log(f"SYS: Initialised. OS={os_name.upper()}. JARVIS online.")
+        self._log.append_log(f"SYS: Inicializado. OS={os_name.upper()}.")
+        QTimer.singleShot(200, self._show_boot)
 
 class _RootShim:
     def __init__(self, app: QApplication):
