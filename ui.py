@@ -475,6 +475,52 @@ class HudCanvas(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), glow_r, glow_r)
 
+        # == ARC REACTOR CORE ==
+        core_r = r_face * 1.15
+        pulse = math.sin(self._pulse * 1.8)
+
+        # core containment ring — thick bright double ring
+        for ring_off, ring_w, ring_a in [(0, 3.5, 200), (4, 1.2, 120)]:
+            rr = core_r + ring_off
+            p.setPen(QPen(qcol(C.PRI if not self.muted else C.MUTED_C, ring_a), ring_w))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(cx - rr, cy - rr, rr * 2, rr * 2))
+
+        # rotating energy segments around the core
+        seg_r = core_r + 1.5
+        num_seg = 12
+        seg_arc = 20
+        for i in range(num_seg):
+            angle = math.radians((self._rings[0] * 2.5 + i * 360 / num_seg) % 360)
+            seg_x = cx + seg_r * math.cos(angle)
+            seg_y = cy - seg_r * math.sin(angle)
+            seg_a = 140 + int(pulse * 40)
+            p.setPen(QPen(qcol(C.GOLD if not self.muted else C.MUTED_C, seg_a), 2.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            seg_rect = QRectF(seg_x - 4, seg_y - 4, 8, 8)
+            p.drawArc(seg_rect, int(angle * 57.3 * 16), seg_arc * 16)
+
+        # orbiting bright dots — fast inner orbit
+        for j in range(6):
+            dot_ang = math.radians((self._scan * 3 + j * 60) % 360)
+            dot_r = core_r + 5
+            dx = cx + dot_r * math.cos(dot_ang)
+            dy = cy - dot_r * math.sin(dot_ang)
+            dot_a = 160 + int(pulse * 60)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(qcol(C.WHITE, dot_a)))
+            p.drawEllipse(QPointF(dx, dy), 2.5, 2.5)
+
+        # inner core glow — tight bright ring that pulses
+        inner_glow_r = core_r * 0.85
+        inner_gradient = QRadialGradient(QPointF(cx, cy), inner_glow_r)
+        inner_gradient.setColorAt(0.0, QColor(0, 212, 255, 30 + int(pulse * 20 + 20)))
+        inner_gradient.setColorAt(0.7, QColor(0, 160, 220, 10))
+        inner_gradient.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setBrush(QBrush(inner_gradient))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(cx, cy), inner_glow_r, inner_glow_r)
+
         # halo glow with gold gradient on outer rings
         for i in range(10):
             r   = r_face * (1.8 - i * 0.08)
