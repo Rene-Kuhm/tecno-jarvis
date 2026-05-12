@@ -1,11 +1,11 @@
-import subprocess
 import sys
+from pathlib import Path
 
-print("Installing requirements...")
-subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
 
-print("Installing Playwright browsers...")
-subprocess.run([sys.executable, "-m", "playwright", "install"], check=True)
+from install import main
 
-print("\n✅ Setup completo. Ejecuta 'python main.py' para iniciar Tecno J.A.R.V.I.S.")
+if __name__ == "__main__":
+    main()
 
