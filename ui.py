@@ -1085,7 +1085,7 @@ class BootOverlay(QWidget):
 
         sequence = [
             ("INICIALIZANDO NUCLEO J.A.R.V.I.S...", 30),
-            ("CARGANDO PROTOCOLOS TECNODESPEGUE...", 25),
+            ("CARGANDO PROTOCOLOS TECNO...", 25),
             ("CONECTANDO SISTEMAS DE DEFENSA...", 20),
             ("VERIFICANDO FIRMWARE STARK INDUSTRIES...", 18),
             ("J.A.R.V.I.S EN LINEA, SE\u00d1OR.", 0),
@@ -1301,7 +1301,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, face_path: str):
         super().__init__()
-        self.setWindowTitle("TecnoDespegue--J.A.R.V.I.S")
+        self.setWindowTitle("Tecno--J.A.R.V.I.S")
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
@@ -1451,7 +1451,7 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        lay.addWidget(_badge("TECNODESPEGUE", C.PRI_DIM))
+        lay.addWidget(_badge("TECNO", C.PRI_DIM))
         lay.addStretch()
 
         mid = QVBoxLayout(); mid.setSpacing(1)
@@ -1920,7 +1920,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Silenciar  \u00B7  [F11] Pantalla Completa"))
         lay.addStretch()
-        lay.addWidget(_fl("FatihMakes Industries  \u00B7  TECNODESPEGUE  \u00B7  CLASIFICADO"))
+        lay.addWidget(_fl("FatihMakes Industries  \u00B7  TECNO  \u00B7  CLASIFICADO"))
         lay.addStretch()
         lay.addWidget(_fl("© FATIHMAKES", C.PRI_DIM))
         return w
