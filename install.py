@@ -14,6 +14,8 @@ VENV = ROOT / ".venv"
 REQ = ROOT / "requirements.txt"
 CONFIG_DIR = ROOT / "config"
 API_FILE = CONFIG_DIR / "api_keys.json"
+RUN_BAT = ROOT / "run.bat"
+RUN_SH = ROOT / "run.sh"
 
 WINDOWS_ONLY = {
     "comtypes",
@@ -148,13 +150,60 @@ def ensure_config(check_only: bool) -> None:
         )
 
 
+def write_launchers(check_only: bool) -> None:
+    log("Generando lanzadores run.bat y run.sh.")
+    if check_only:
+        return
+    RUN_BAT.write_text(
+        "@echo off\n"
+        "setlocal\n"
+        "cd /d \"%~dp0\"\n"
+        "\n"
+        "if not exist \".venv\\Scripts\\python.exe\" (\n"
+        "    echo [Tecno--J.A.R.V.I.S runner] No se encontro .venv.\n"
+        "    echo Ejecuta install.bat primero.\n"
+        "    pause\n"
+        "    exit /b 1\n"
+        ")\n"
+        "\n"
+        "\".venv\\Scripts\\python.exe\" main.py\n"
+        "if errorlevel 1 (\n"
+        "    echo.\n"
+        "    echo [Tecno--J.A.R.V.I.S runner] La aplicacion se cerro con error.\n"
+        "    pause\n"
+        "    exit /b 1\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    RUN_SH.write_text(
+        "#!/usr/bin/env sh\n"
+        "set -eu\n"
+        "cd \"$(dirname \"$0\")\"\n"
+        "\n"
+        "if [ ! -x \".venv/bin/python\" ]; then\n"
+        "  echo \"[Tecno--J.A.R.V.I.S runner] No se encontro .venv.\"\n"
+        "  echo \"Ejecuta sh install.sh primero.\"\n"
+        "  exit 1\n"
+        "fi\n"
+        "\n"
+        "\".venv/bin/python\" main.py\n",
+        encoding="utf-8",
+    )
+    if platform.system() != "Windows":
+        RUN_SH.chmod(0o755)
+
+
 def print_next_steps() -> None:
     py = venv_python()
     log("Instalacion completa.")
     print()
     print("Siguiente paso:")
     print(f"  1. Edita {API_FILE} y pega tu gemini_api_key.")
-    print(f"  2. Ejecuta: {py} main.py")
+    if platform.system() == "Windows":
+        print("  2. Ejecuta: run.bat")
+    else:
+        print("  2. Ejecuta: sh run.sh")
+    print(f"  Alternativa manual: {py} main.py")
 
 
 def main() -> None:
@@ -170,6 +219,7 @@ def main() -> None:
     install_python_packages(args.check)
     install_playwright(args.check)
     ensure_config(args.check)
+    write_launchers(args.check)
     print_next_steps()
 
 

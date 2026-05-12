@@ -45,6 +45,7 @@ El instalador automatico:
 - Instala dependencias Python.
 - Instala navegadores de Playwright.
 - Crea `config/api_keys.json` si falta.
+- Genera o actualiza `run.bat` y `run.sh`.
 - En Linux/macOS intenta instalar dependencias del sistema conocidas cuando hay gestor compatible.
 
 ## Configuracion
