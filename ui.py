@@ -2112,9 +2112,9 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Silenciar  \u00B7  [F11] Pantalla Completa"))
         lay.addStretch()
-        lay.addWidget(_fl("FatihMakes Industries  \u00B7  TECNO  \u00B7  CLASIFICADO"))
+        lay.addWidget(_fl("TecnoDespegue"))
         lay.addStretch()
-        lay.addWidget(_fl("© FATIHMAKES", C.PRI_DIM))
+        lay.addWidget(_fl("TecnoDespegue", C.PRI_DIM))
         return w
 
     def _on_file_selected(self, path: str):
