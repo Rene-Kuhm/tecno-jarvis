@@ -1,2 +1,3 @@
-# Jarvis Project
-This project is an AI assistant named Jarvis, capable of various tasks including opening applications, searching the web, programming, setting reminders, controlling computer settings, managing files, and interacting with users in multiple languages.
+# Tecno J.A.R.V.I.S
+
+Asistente de escritorio estilo Iron Man con interfaz HUD futurista, reconocimiento de voz en tiempo real, control del sistema y ejecucion de tareas multi-paso.
