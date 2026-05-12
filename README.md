@@ -2,7 +2,9 @@
 
 Tecno--J.A.R.V.I.S es un asistente de escritorio con interfaz HUD futurista, voz en tiempo real, control del sistema, vision de pantalla/camara, carga de archivos y ejecucion de tareas multi-paso. El proyecto esta impulsado por TecnoDespegue, agencia de automatizacion e inteligencia artificial: https://www.tecnodespegue.com
 
-![Tecno--J.A.R.V.I.S HUD](docs/images/tecno-jarvis-hud.png)
+![Tecno--J.A.R.V.I.S abierto](docs/images/tecno-jarvis-open.png)
+
+![Tecno--J.A.R.V.I.S arrancando](docs/images/tecno-jarvis-startup.png)
 
 ## Que puede hacer
 
