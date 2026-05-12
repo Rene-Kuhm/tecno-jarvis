@@ -99,6 +99,23 @@ La app incluye un boton `BUSCAR UPDATE` que consulta la ultima version publicada
 
 Por seguridad, Tecno--J.A.R.V.I.S no se auto-actualiza en silencio y no reemplaza archivos sin autorizacion del usuario.
 
+## MCP
+
+Tecno--J.A.R.V.I.S puede conectarse a servidores MCP mediante dos tools internas:
+
+- `mcp_list_tools`: lista servidores MCP habilitados y sus herramientas.
+- `mcp_call`: ejecuta una herramienta MCP indicando servidor, tool y argumentos JSON.
+
+La configuracion base esta en `config/mcp_servers.json`. Por defecto quedan habilitados:
+
+- `playwright`: automatizacion de navegador con `@playwright/mcp`.
+- `filesystem`: acceso limitado a Desktop, Documents y Downloads.
+- `memory`: memoria MCP tipo grafo durante la sesion.
+
+Tambien quedan preparados, pero deshabilitados hasta configurar dependencias o credenciales: `fetch`, `time`, `git`, `chrome_devtools`, `context7`, `tavily`, `google_workspace`, `gmail` y `google_calendar`.
+
+Para ajustes locales o credenciales, crea `config/mcp_servers.local.json`. Ese archivo esta ignorado por Git. En Windows, los MCP basados en npm usan `cmd /c npx` para evitar bloqueos de PowerShell.
+
 ## Verificar instalacion
 
 Para probar sin instalar nada nuevo:
@@ -110,7 +127,7 @@ python install.py --check
 Para validar dependencias criticas despues de instalar:
 
 ```sh
-.venv/Scripts/python.exe -c "import PyQt6, sounddevice, cv2, numpy, psutil, playwright, pyautogui; print('imports-ok')"
+.venv/Scripts/python.exe -c "import PyQt6, sounddevice, cv2, numpy, psutil, playwright, pyautogui, mcp; print('imports-ok')"
 ```
 
 ## Archivos importantes
@@ -123,6 +140,8 @@ Para validar dependencias criticas despues de instalar:
 | `run.bat` | Lanza la app en Windows usando `.venv`. |
 | `run.sh` | Lanza la app en Linux/macOS usando `.venv`. |
 | `main.py` | Loop principal de voz, audio y herramientas. |
+| `core/mcp_manager.py` | Cliente MCP y puente stdio para servidores configurados. |
+| `config/mcp_servers.json` | Servidores MCP disponibles y habilitados. |
 | `ui.py` | Interfaz PyQt6 HUD futurista. |
 | `requirements.txt` | Dependencias Python. |
 
