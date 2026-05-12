@@ -116,6 +116,10 @@ Para validar dependencias criticas despues de instalar:
 | `ui.py` | Interfaz PyQt6 HUD futurista. |
 | `requirements.txt` | Dependencias Python. |
 
+## Contribuir
+
+Antes de enviar cambios, lee `CONTRIBUTING.md`. Las contribuciones deben preservar instalacion, arranque, UI, branding y seguridad del proyecto.
+
 ## Seguridad y permisos
 
 Tecno--J.A.R.V.I.S esta pensado como asistente local de alto permiso. Puede interactuar con archivos, ventanas, navegador, audio, pantalla y acciones del sistema. Usalo solamente en equipos propios o entornos donde tengas autorizacion.
