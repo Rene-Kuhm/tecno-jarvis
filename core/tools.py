@@ -1,5 +1,36 @@
 TOOL_DECLARATIONS = [
     {
+        "name": "mcp_list_tools",
+        "description": (
+            "Lists enabled MCP servers and their available tools. Use this before mcp_call when the user asks for "
+            "MCP-powered browser automation, filesystem access, web fetch, time, memory, Git, Google Workspace, "
+            "or any external productivity integration."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "server": {"type": "STRING", "description": "Optional MCP server name to inspect, e.g. playwright, filesystem, fetch, time"},
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "mcp_call",
+        "description": (
+            "Calls a tool exposed by an enabled MCP server. Always call mcp_list_tools first if you do not know "
+            "the exact server/tool name or required JSON arguments. Pass arguments_json as a JSON object string."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "server": {"type": "STRING", "description": "Enabled MCP server name, e.g. playwright, filesystem, memory, fetch, time"},
+                "tool": {"type": "STRING", "description": "Exact MCP tool name returned by mcp_list_tools"},
+                "arguments_json": {"type": "STRING", "description": "JSON object string with tool arguments, e.g. {\"url\":\"https://example.com\"}"},
+            },
+            "required": ["server", "tool"]
+        }
+    },
+    {
         "name": "open_app",
         "description": (
             "Opens any application on the computer. "

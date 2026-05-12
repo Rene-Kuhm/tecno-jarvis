@@ -1,0 +1,111 @@
+{
+  "servers": {
+    "playwright": {
+      "enabled": true,
+      "category": "browser",
+      "risk": "medium",
+      "description": "Microsoft Playwright MCP for browser automation on Windows.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@playwright/mcp"]
+    },
+    "filesystem": {
+      "enabled": true,
+      "category": "files",
+      "risk": "high",
+      "description": "Controlled filesystem access limited to common user folders.",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "%USERPROFILE%\\Desktop",
+        "%USERPROFILE%\\Documents",
+        "%USERPROFILE%\\Downloads"
+      ]
+    },
+    "memory": {
+      "enabled": true,
+      "category": "memory",
+      "risk": "low",
+      "description": "MCP knowledge-graph memory for runtime notes and relationships.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-memory"]
+    },
+    "fetch": {
+      "enabled": true,
+      "category": "web",
+      "risk": "medium",
+      "description": "Official MCP fetch server. Enable after installing uv or mcp-server-fetch.",
+      "command": "{BASE_DIR}\\.venv\\Scripts\\uvx.exe",
+      "args": ["mcp-server-fetch"]
+    },
+    "time": {
+      "enabled": true,
+      "category": "productivity",
+      "risk": "low",
+      "description": "Official MCP time and timezone utilities. Enable after installing uv or mcp-server-time.",
+      "command": "{BASE_DIR}\\.venv\\Scripts\\uvx.exe",
+      "args": ["mcp-server-time"]
+    },
+    "git": {
+      "enabled": true,
+      "category": "development",
+      "risk": "medium",
+      "description": "Official MCP Git server scoped to the Tecno J.A.R.V.I.S repository.",
+      "command": "{BASE_DIR}\\.venv\\Scripts\\uvx.exe",
+      "args": ["mcp-server-git", "--repository", "{BASE_DIR}"]
+    },
+    "chrome_devtools": {
+      "enabled": true,
+      "category": "browser",
+      "risk": "high",
+      "description": "Chrome DevTools MCP for debugging Chrome tabs, console, network and performance.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "chrome-devtools-mcp"]
+    },
+    "context7": {
+      "enabled": true,
+      "category": "development",
+      "risk": "low",
+      "description": "Context7 MCP for current library/framework documentation.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp"]
+    },
+    "tavily": {
+      "enabled": false,
+      "category": "web",
+      "risk": "medium",
+      "description": "Tavily advanced web search MCP. Requires TAVILY_API_KEY in the environment.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "tavily-mcp"],
+      "env": {
+        "TAVILY_API_KEY": "$TAVILY_API_KEY"
+      }
+    },
+    "google_workspace": {
+      "enabled": false,
+      "category": "productivity",
+      "risk": "high",
+      "description": "Google Workspace MCP for Drive, Docs, Sheets, Gmail and Calendar. Requires OAuth setup before enabling.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "google-tools-mcp"]
+    },
+    "gmail": {
+      "enabled": false,
+      "category": "productivity",
+      "risk": "high",
+      "description": "Gmail-specific MCP with auto-auth. Enable only after reviewing permissions.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@gongrzhe/server-gmail-autoauth-mcp"]
+    },
+    "google_calendar": {
+      "enabled": false,
+      "category": "productivity",
+      "risk": "medium",
+      "description": "Google Calendar MCP. Safer first Google integration than full Gmail/Drive access.",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@cocal/google-calendar-mcp"]
+    }
+  }
+}

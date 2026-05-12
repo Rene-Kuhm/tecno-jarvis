@@ -23,6 +23,7 @@ from core.config import (
 )
 from core.tools import TOOL_DECLARATIONS
 from core.provider import get_live_client, get_live_types
+from core.mcp_manager import get_mcp_manager
 
 types = get_live_types()
 
@@ -264,7 +265,17 @@ class JarvisLive:
         result = "Done."
 
         try:
-            if name == "open_app":
+            if name == "mcp_list_tools":
+                result = await get_mcp_manager().list_tools_text(args.get("server") or None)
+
+            elif name == "mcp_call":
+                result = await get_mcp_manager().call_tool_text(
+                    args.get("server", ""),
+                    args.get("tool", ""),
+                    args.get("arguments_json") or None,
+                )
+
+            elif name == "open_app":
                 r = await loop.run_in_executor(None, lambda: open_app(parameters=args, response=None, player=self.ui))
                 result = r or f"Opened {args.get('app_name')}."
 

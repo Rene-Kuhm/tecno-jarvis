@@ -2,5 +2,7 @@
 __pycache__/
 *.pyc
 config/api_keys.json
+config/mcp_servers.local.json
+config/mcp_auth.json
 *.log
 memory/session_state.json
