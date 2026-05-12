@@ -18,6 +18,7 @@ Tecno--J.A.R.V.I.S es un asistente de escritorio con interfaz HUD futurista, voz
 | Productividad | Puede ayudar con recordatorios, clima, vuelos, mensajes, archivos, codigo y presentaciones. |
 | Memoria de sesion | Mantiene contexto de tareas y progreso durante la sesion. |
 | UI futurista | Interfaz PyQt6 estilo J.A.R.V.I.S con paneles HUD, diagnostico de audio y estado en vivo. |
+| Actualizaciones | Consulta GitHub Releases y avisa cuando hay una version nueva disponible. |
 
 ## Instalacion rapida
 
@@ -88,6 +89,12 @@ En Linux/macOS usa:
 ```sh
 .venv/bin/python main.py
 ```
+
+## Actualizaciones
+
+La app incluye un boton `BUSCAR UPDATE` que consulta la ultima version publicada en GitHub Releases. Si hay una version nueva, abre la pagina del release para que el usuario decida si quiere descargarla.
+
+Por seguridad, Tecno--J.A.R.V.I.S no se auto-actualiza en silencio y no reemplaza archivos sin autorizacion del usuario.
 
 ## Verificar instalacion
 

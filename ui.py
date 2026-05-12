@@ -19,7 +19,7 @@ from PyQt6.QtCore import (
     QTimer, QUrl, pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QBrush, QColor, QDragEnterEvent, QDropEvent, QFont, QFontDatabase,
+    QBrush, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QFont, QFontDatabase,
     QKeySequence, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
     QRadialGradient, QShortcut,
 )
@@ -28,6 +28,8 @@ from PyQt6.QtWidgets import (
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QTextEdit,
     QVBoxLayout, QWidget, QProgressBar,
 )
+
+from core.updater import check_latest_release, current_version
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -1512,6 +1514,7 @@ class MainWindow(QMainWindow):
     _state_sig = pyqtSignal(str)
     _audio_diag_sig = pyqtSignal(object)
     _runtime_sig = pyqtSignal(object)
+    _update_sig = pyqtSignal(object)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1575,6 +1578,7 @@ class MainWindow(QMainWindow):
         self._state_sig.connect(self._apply_state)
         self._audio_diag_sig.connect(self._apply_audio_diag)
         self._runtime_sig.connect(self._apply_runtime_status)
+        self._update_sig.connect(self._apply_update_status)
 
         self._overlay: SetupOverlay | None = None
         self._boot_overlay = None
@@ -1594,6 +1598,37 @@ class MainWindow(QMainWindow):
             self.showNormal()
         else:
             self.showFullScreen()
+
+    def _check_updates(self):
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText("↻  BUSCANDO UPDATE...")
+        self._log.append_log("SYS: Buscando actualizaciones en GitHub Releases...")
+
+        def _worker():
+            try:
+                self._update_sig.emit(check_latest_release())
+            except Exception as exc:
+                self._update_sig.emit(exc)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_update_status(self, result):
+        self._update_btn.setEnabled(True)
+        if isinstance(result, Exception):
+            self._update_btn.setText(f"↻  VERSION {current_version()}  ·  ERROR UPDATE")
+            self._log.append_log(f"SYS ERR: No se pudo verificar update: {result}")
+            return
+
+        if result.update_available:
+            self._update_btn.setText(f"↗  UPDATE v{result.latest_version} DISPONIBLE")
+            self._log.append_log(
+                f"SYS: Update disponible v{result.latest_version}. Abriendo GitHub Releases."
+            )
+            QDesktopServices.openUrl(QUrl(result.release_url))
+            return
+
+        self._update_btn.setText(f"✓  VERSION {result.current_version}  ·  AL DIA")
+        self._log.append_log(f"SYS: Tecno--J.A.R.V.I.S esta al dia (v{result.current_version}).")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1827,6 +1862,20 @@ class MainWindow(QMainWindow):
         """)
         fs_btn.clicked.connect(self._toggle_fullscreen)
         lay.addWidget(fs_btn)
+
+        self._update_btn = QPushButton(f"↻  VERSION {current_version()}  ·  BUSCAR UPDATE")
+        self._update_btn.setFixedHeight(24)
+        self._update_btn.setFont(_iron_font(7))
+        self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 13, 18, 180); color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 4px;
+            }}
+            QPushButton:hover {{ color: {C.GOLD}; border: 1px solid {C.GOLD}; }}
+        """)
+        self._update_btn.clicked.connect(self._check_updates)
+        lay.addWidget(self._update_btn)
 
         return w
 
