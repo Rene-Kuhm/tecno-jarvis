@@ -1022,7 +1022,7 @@ class BootOverlay(QWidget):
 
 
 class BootSequence:
-    def __init__(self, parent_widget: QWidget, on_done):
+    def __init__(self, parent_widget, on_done):
         self._overlay = BootOverlay(parent_widget)
         cw = parent_widget
         self._overlay.setGeometry(0, 0, cw.width(), cw.height())
