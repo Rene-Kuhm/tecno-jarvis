@@ -745,8 +745,17 @@ class MetricBar(QWidget):
             bar_col = qcol(self._color)
 
         if fill_w > 0:
-            p.setBrush(QBrush(bar_col))
-            p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2, 2)
+            if self._value > 85:
+                c1, c2 = C.RED, "#ff6688"
+            elif self._value > 65:
+                c1, c2 = C.GOLD, C.ACC
+            else:
+                c1, c2 = self._color, self._color
+            gradient = QLinearGradient(bar_x, 0, bar_x + fill_w, 0)
+            gradient.setColorAt(0, QColor(c1))
+            gradient.setColorAt(1, QColor(c2))
+            p.setBrush(QBrush(gradient))
+            p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2.5, 2.5)
 
         p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.TEXT_DIM), 1))
@@ -1352,6 +1361,11 @@ class MainWindow(QMainWindow):
         self._metric_tmr.start(2000)
         self._update_metrics()
 
+        self._badge_pulse = 0.0
+        self._badge_tmr = QTimer(self)
+        self._badge_tmr.timeout.connect(self._pulse_badges)
+        self._badge_tmr.start(50)
+
         self._log_sig.connect(self._log.append_log)
         self._state_sig.connect(self._apply_state)
         self._audio_diag_sig.connect(self._apply_audio_diag)
@@ -1436,6 +1450,16 @@ class MainWindow(QMainWindow):
             self._proc_lbl.setText(f"PROC  {proc_count}")
         except Exception:
             self._proc_lbl.setText("PROC  --")
+
+    def _pulse_badges(self):
+        self._badge_pulse = (self._badge_pulse + 0.05) % 6.2832
+        p = 0.5 + 0.5 * math.sin(self._badge_pulse)
+        for lbl, base_color in self._badge_labels:
+            alpha = int(140 + p * 80)
+            lbl.setStyleSheet(
+                f"color: {base_color}; background: rgba(1, 21, 26, 170);"
+                f"border: 1px solid rgba(15, 64, 96, {alpha}); border-radius: 4px; padding: 5px;"
+            )
 
 
     def _build_header(self) -> QWidget:
@@ -1540,6 +1564,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(info_panel)
         lay.addStretch()
 
+        self._badge_labels = []
         for txt, col in [
             ("NUCLEO IA\nACTIVO",     C.GREEN),
             ("SEGURIDAD\nVERIFICADA", C.GOLD),
@@ -1549,10 +1574,11 @@ class MainWindow(QMainWindow):
             lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(
-                f"color: {col}; background: {C.PANEL2};"
-                f"border: 1px solid {C.BORDER_A}; border-radius: 3px; padding: 4px;"
+                f"color: {col}; background: rgba(1, 21, 26, 170);"
+                f"border: 1px solid rgba(15, 64, 96, 180); border-radius: 4px; padding: 5px;"
             )
             lay.addWidget(lbl)
+            self._badge_labels.append((lbl, col))
 
         return w
     def _build_right_panel(self) -> QWidget:
@@ -1564,18 +1590,32 @@ class MainWindow(QMainWindow):
         lay.setSpacing(6)
 
         def _sec(txt):
-            l = QLabel(f"▸ {txt}")
-            l.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
-            l.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
-            return l
+            w = QWidget()
+            w.setFixedHeight(22)
+            lay = QVBoxLayout(w)
+            lay.setContentsMargins(0, 2, 0, 0)
+            lay.setSpacing(2)
+            l = QLabel(f"\u25B8 {txt}")
+            l.setFont(_iron_font(7, bold=True))
+            l.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+            lay.addWidget(l)
+            line = QFrame()
+            line.setFixedHeight(1)
+            line.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {C.PRI}, stop:1 transparent); border: none;")
+            lay.addWidget(line)
+            return w
+
+        def _glow_sep():
+            s = QFrame()
+            s.setFixedHeight(1)
+            s.setStyleSheet(f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 transparent, stop:0.3 {C.BORDER}, stop:0.7 {C.BORDER}, stop:1 transparent); border: none; margin: 4px 0;")
+            return s
 
         lay.addWidget(_sec("REGISTRO DE ACTIVIDAD"))
         self._log = LogWidget()
         lay.addWidget(self._log, stretch=1)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep)
+        lay.addWidget(_glow_sep())
 
         lay.addWidget(_sec("SUBIR ARCHIVO"))
         self._drop_zone = FileDropZone()
@@ -1588,23 +1628,17 @@ class MainWindow(QMainWindow):
         self._file_hint.setWordWrap(True)
         lay.addWidget(self._file_hint)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep2)
+        lay.addWidget(_glow_sep())
 
         lay.addWidget(_sec("DIAGNOSTICO DE AUDIO"))
         lay.addWidget(self._build_audio_diag_panel())
 
-        sep3 = QFrame(); sep3.setFrameShape(QFrame.Shape.HLine)
-        sep3.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep3)
+        lay.addWidget(_glow_sep())
 
         lay.addWidget(_sec("ESTADO EN TIEMPO REAL"))
         lay.addWidget(self._build_runtime_panel())
 
-        sep4 = QFrame(); sep4.setFrameShape(QFrame.Shape.HLine)
-        sep4.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep4)
+        lay.addWidget(_glow_sep())
         lay.addWidget(_sec("COMANDOS"))
         lay.addLayout(self._build_input_row())
 
