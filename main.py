@@ -22,6 +22,9 @@ from core.config import (
     load_system_prompt,
 )
 from core.tools import TOOL_DECLARATIONS
+from core.provider import get_live_client, get_live_types
+
+types = get_live_types()
 
 from actions.file_processor import file_processor
 from actions.flight_finder     import flight_finder
